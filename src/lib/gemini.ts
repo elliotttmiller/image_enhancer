@@ -22,17 +22,9 @@ import {
 import {
   IMAGEREGENERATOR_CLONE_PROMPT,
   IMAGEREGENERATOR_CREATIVE_PROMPT,
-  PART_ANALYSIS_PROMPT,
-  GENERATION_VERIFICATION_PROMPT,
-  buildTargetedRetryDirective,
 } from "./prompts";
 import {
   getPolicyForMode,
-  PartDescriptor,
-  VerificationResult,
-  FailureReason,
-  CREATIVE_MODE_VERSION,
-  TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE,
 } from "./creativeModeConfig";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1084,305 +1076,39 @@ export async function refineSchematic(
 }
 
 // ============================================================================
-// PRE-GENERATION ANALYSIS — analyzePartForRegeneration
-// Calls a vision model to extract a structured PartDescriptor from the
-// original image BEFORE generation so the generation prompt can be
-// enriched with concrete inventory/material/compliance context.
-// ============================================================================
-
-export async function analyzePartForRegeneration(
-  base64Image: string,
-  mimeType: string
-): Promise<PartDescriptor> {
-  const caller = "analyzePartForRegeneration";
-  validateApiKey(caller);
-
-  const analysisModel = "gemini-3.1-pro-preview";
-
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    console.info(`[gemini] ${caller} — attempt ${attempt} | model=${analysisModel}`);
-
-    const response = await ai.models.generateContent({
-      model: analysisModel,
-      contents: {
-        parts: [
-          { text: PART_ANALYSIS_PROMPT },
-          { inlineData: { mimeType, data: base64Image } },
-        ],
-      },
-      config: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-      },
-    });
-
-    const text = response.text?.trim();
-    if (!text) throw new Error("No analysis text returned.");
-
-    try {
-      const parsed = JSON.parse(text) as PartDescriptor;
-      console.info(`[gemini] ${caller} — success | inventory items: ${parsed.inventory?.length ?? 0}`);
-      return parsed;
-    } catch {
-      throw new Error(`Failed to parse PartDescriptor JSON: ${text.substring(0, 200)}`);
-    }
-  }, 'text', { maxAttempts: 3, baseDelayMs: 800, maxDelayMs: 5000, backoffMultiplier: 2.0 });
-}
-
-// ============================================================================
-// POST-GENERATION VERIFICATION — verifyRegeneration
-// Sends both the original image and the generated image to a vision model
-// and asks it to score the output against the PartDescriptor and the
-// creative-mode contracts. Returns a VerificationResult with sub-scores
-// and specific failure reasons the retry system can act on.
-// ============================================================================
-
-export async function verifyRegeneration(
-  originalBase64: string,
-  originalMimeType: string,
-  generatedBase64: string,
-  generatedMimeType: string,
-  partDescriptor: PartDescriptor
-): Promise<VerificationResult> {
-  const caller = "verifyRegeneration";
-  validateApiKey(caller);
-
-  const verificationModel = "gemini-3.1-pro-preview";
-
-  const descriptorJson = JSON.stringify(partDescriptor, null, 2);
-  const verificationPromptWithDescriptor = `
-${GENERATION_VERIFICATION_PROMPT}
-
-ORIGINAL PART ANALYSIS (pre-computed descriptor):
-${descriptorJson}
-`;
-
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    console.info(`[gemini] ${caller} — attempt ${attempt} | model=${verificationModel}`);
-
-    const response = await ai.models.generateContent({
-      model: verificationModel,
-      contents: {
-        parts: [
-          { text: verificationPromptWithDescriptor },
-          { text: "IMAGE 1 — ORIGINAL:" },
-          { inlineData: { mimeType: originalMimeType, data: originalBase64 } },
-          { text: "IMAGE 2 — GENERATED OUTPUT (evaluate this):" },
-          { inlineData: { mimeType: generatedMimeType, data: generatedBase64 } },
-        ],
-      },
-      config: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-      },
-    });
-
-    const text = response.text?.trim();
-    if (!text) throw new Error("No verification response returned.");
-
-    try {
-      const raw = JSON.parse(text);
-
-      // Hard-cap fidelity when topology or morphing failures are present.
-      // The Gemini verifier sometimes assigns 0.40 to fundamentally wrong shapes;
-      // this guard ensures those cases reliably fail the 0.75 fidelity threshold.
-      const hasTopologyOrMorphingFailure = Array.isArray(raw.failureReasons) &&
-        raw.failureReasons.some((r: { type: string }) =>
-          r.type === 'topology_change' || r.type === 'morphing'
-        );
-      if (hasTopologyOrMorphingFailure) {
-        raw.dimensionalFidelityScore = Math.min(
-          raw.dimensionalFidelityScore ?? 0,
-          TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE
-        );
-      }
-
-      const overallScore = (
-        (raw.inventoryMatchScore ?? 0) * 0.40 +
-        (raw.dimensionalFidelityScore ?? 0) * 0.35 +
-        (raw.noveltyScore ?? 0) * 0.25
-      );
-
-      const result: VerificationResult = {
-        passed: false, // will be evaluated by caller against policy thresholds
-        overallScore,
-        inventoryMatchScore: raw.inventoryMatchScore ?? 0,
-        dimensionalFidelityScore: raw.dimensionalFidelityScore ?? 0,
-        noveltyScore: raw.noveltyScore ?? 0,
-        compliancePassed: raw.compliancePassed ?? true,
-        failureReasons: (raw.failureReasons ?? []) as FailureReason[],
-        warnings: raw.warnings ?? [],
-      };
-
-      console.info(
-        `[gemini] ${caller} — success | inventory=${(result.inventoryMatchScore * 100).toFixed(0)}% | fidelity=${(result.dimensionalFidelityScore * 100).toFixed(0)}% | novelty=${(result.noveltyScore * 100).toFixed(0)}% | compliance=${result.compliancePassed}`
-      );
-      return result;
-    } catch {
-      throw new Error(`Failed to parse VerificationResult JSON: ${text.substring(0, 200)}`);
-    }
-  }, 'text', { maxAttempts: 3, baseDelayMs: 800, maxDelayMs: 5000, backoffMultiplier: 2.0 });
-}
-
-// ============================================================================
 // PROMPT BUILDER — buildRegenerationPrompt
-// Composes the generation prompt, optionally injecting:
-//   - The PartDescriptor context for precise identity guidance
-//   - A targeted retry directive when retrying after a known failure
-//   - User's custom instructions
 // ============================================================================
 
 function buildRegenerationPrompt(
   mode: 'creative' | 'clone',
-  customPrompt: string = "",
-  partDescriptor?: PartDescriptor,
-  retryDirective?: string
+  customPrompt: string = ""
 ): string {
   const base = mode === 'clone'
     ? IMAGEREGENERATOR_CLONE_PROMPT
     : IMAGEREGENERATOR_CREATIVE_PROMPT;
 
-  // =========================================================================
-  // TOPOLOGY PREAMBLE — placed FIRST so it is the first thing the model reads.
-  // Research and prompt-engineering practice show that constraints placed early
-  // in context have stronger influence on generation than those at the end.
-  // =========================================================================
-  const tl = partDescriptor?.topologyLock;
-  const topologyPreamble = tl
-    ? `
-╔═══════════════════════════════════════════════════════════════════╗
-║  🔒  FROZEN PART SPECIFICATION — READ THIS BEFORE ANYTHING ELSE  ║
-╚═══════════════════════════════════════════════════════════════════╝
+  if (!customPrompt.trim()) return base;
 
-These values are derived from automated analysis of the reference image.
-You MUST render EXACTLY this specification. Any deviation causes REJECTION.
+  return `${base}
 
-Part description : ${partDescriptor!.assemblyDescription}
-Cross-section    : ${tl.crossSectionProfile}
-Open / Closed    : ${tl.isClosed ? 'CLOSED — forms a complete ring/loop' : 'OPEN — NOT a ring. Do NOT close it.'}
-Bend count       : ${tl.bendCount} — your output must have EXACTLY ${tl.bendCount} bend(s)
-Return lips      : ${tl.returnLipCount === 0
-      ? '0 — NONE. Do NOT add inward-facing lips or flanges. Adding them turns a U-channel into a C-channel (WRONG).'
-      : `${tl.returnLipCount} — your output must have EXACTLY ${tl.returnLipCount}`}
-Raised bridges   : ${tl.raisedBridgeCount === 0
-      ? '0 — part is PLANAR/FLAT. Do NOT add arches, domes, or raised bridges of any kind.'
-      : `${tl.raisedBridgeCount} raised bridge(s)`}
-${tl.raisedBridgeCount > 0
-      ? `Bridge height    : ≈${tl.bridgeHeightRatioPercent}% of total part width — SHALLOW. Do NOT exaggerate. Must NOT exceed ${Math.min(100, tl.bridgeHeightRatioPercent + 10)}% height ratio.`
-      : ''}
-Summary          : ${tl.topologySummary}
-
-⛔ HARD STOPS FOR THIS SPECIFIC PART:
-${!tl.isClosed ? '• DO NOT close the open part into a ring, tube, or loop.\n' : ''}${tl.returnLipCount === 0 ? '• DO NOT add inward-facing return lips — that morphs it from a U-channel into a C-channel.\n' : ''}${tl.raisedBridgeCount === 0 ? '• DO NOT add any raised arch, dome, or bridge — the part is FLAT/PLANAR.\n' : ''}${tl.raisedBridgeCount > 0 ? `• DO NOT exaggerate the bridge height — it is only ${tl.bridgeHeightRatioPercent}% of the part width. A tall semi-circular arch is WRONG.\n` : ''}• DO NOT substitute circular holes/notches with rectangular cutouts or vice versa.
-• DO NOT add flanges, walls, or features that are not in the reference.
-
-MANDATORY SELF-CHECK BEFORE RENDERING:
-  1. State: "My output cross-section is: ___" — must match "${tl.crossSectionProfile}"
-  2. State: "My output is [open/closed]" — must match "${tl.isClosed ? 'closed' : 'open'}"
-  3. State: "Return lips in my output: ___" — must be ${tl.returnLipCount}
-  4. State: "Raised bridges in my output: ___" — must be ${tl.raisedBridgeCount}
-  ${tl.raisedBridgeCount > 0 ? `5. State: "Bridge height ratio: ___%" — must be ≤${tl.bridgeHeightRatioPercent + 10}%` : ''}
-  If ANY of these are wrong: STOP. Do not render. Correct the specification first.
-
-╔═══════════════════════════════════════════════════════════════════╗
-║                    END FROZEN SPECIFICATION                       ║
-╚═══════════════════════════════════════════════════════════════════╝
-`
-    : '';
-
-  const sections: string[] = [];
-
-  // 1. Topology preamble (highest priority — first in context)
-  if (topologyPreamble) {
-    sections.push(topologyPreamble);
-  }
-
-  // 2. Targeted retry directive (if this is a corrective attempt)
-  if (retryDirective?.trim()) {
-    sections.push(retryDirective);
-  }
-
-  // 3. Base prompt (full creative or clone directive)
-  sections.push(base);
-
-  // 4. Part context block (inventory, materials, features + topology reminder)
-  if (partDescriptor) {
-    const inventoryList = partDescriptor.inventory
-      .map(item => `  • ${item.count}× ${item.name} (${item.category}): ${item.shortDescription}`)
-      .join('\n');
-
-    const materialsList = partDescriptor.materials
-      .map(m => `  • ${m.component}: ${m.material}, ${m.finish}`)
-      .join('\n');
-
-    const featuresList = partDescriptor.distinctiveFeatures
-      .map(f => `  • ${f}`)
-      .join('\n');
-
-    const complianceNotes = partDescriptor.complianceFlags.length > 0
-      ? partDescriptor.complianceFlags
-          .filter(f => f.mustNeutralise)
-          .map(f => `  • REMOVE: ${f.type} — ${f.description}`)
-          .join('\n')
-      : '  • None detected';
-
-    // Topology reminder (condensed) — reinforces the preamble from the other end
-    const topologyReminder = tl
-      ? `
-🔒 TOPOLOGY REMINDER (see full spec at the top of this prompt):
-   Cross-section: ${tl.crossSectionProfile} | Open/Closed: ${tl.isClosed ? 'CLOSED' : 'OPEN'} | Return lips: ${tl.returnLipCount} | Bridges: ${tl.raisedBridgeCount}${tl.raisedBridgeCount > 0 ? ` (height ≤${tl.bridgeHeightRatioPercent + 10}% of part width)` : ''}
-`
-      : '';
-
-    sections.push(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PART CONTEXT — Pre-analysis descriptor (use this to guide generation)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Assembly: ${partDescriptor.assemblyDescription}
-View type in original: ${partDescriptor.viewType}
-${topologyReminder}
-INVENTORY (every item must appear in your output):
-${inventoryList}
-
-MATERIALS & FINISHES:
-${materialsList}
-
-DISTINCTIVE FEATURES (verify these are present):
-${featuresList}
-
-COMPLIANCE — must neutralise in output:
-${complianceNotes}
-`);
-  }
-
-  // 5. Custom prompt (user instructions, last)
-  if (customPrompt.trim()) {
-    sections.push(`
 ADDITIONAL INSTRUCTIONS FROM USER:
-${customPrompt.trim()}`);
-  }
-
-  return sections.join('\n');
+${customPrompt.trim()}`;
 }
 
 // ============================================================================
 // PUBLIC API — regenerateImage
-// Staged pipeline v2: analyze → generate → verify → targeted-retry
+// Single-pass intelligent generation: the prompt contains a built-in
+// self-analysis phase so no separate pre-analysis API call is needed.
+// API-level retry handles transient failures (rate limits, network errors).
 // ============================================================================
 
 /**
- * Regenerates a product/part image.
+ * Regenerates a product/part image using intelligent single-pass prompt engineering.
  *
- * Creative mode staged pipeline:
- *   1. Pre-analysis: extract PartDescriptor from original
- *   2. Context-aware generation using PartDescriptor
- *   3. Post-generation verification against original + descriptor
- *   4. Targeted retry with failure-specific corrections (if verification fails)
- *
- * Clone mode: deterministic reproduction, same pipeline but lower temp +
- *   stricter thresholds + no novelty requirement.
+ * The generation prompt contains a structured self-analysis chain-of-thought that
+ * instructs the model to internally analyse the image (inventory, topology, materials,
+ * compliance) before rendering, producing professional first-run results without
+ * additional API round-trips for pre-analysis or post-verification.
  */
 export async function regenerateImage(
   base64Image: string,
@@ -1392,7 +1118,7 @@ export async function regenerateImage(
   imageSize: ImageSize = "1K",
   model: ModelVersion = "gemini-3.1-flash-image-preview",
   mode: 'creative' | 'clone' = 'creative'
-): Promise<{ imageUrl: string; aspectRatio: AspectRatio; verificationResult?: VerificationResult }> {
+): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
   const caller = "regenerateImage";
 
   validateApiKey(caller);
@@ -1401,11 +1127,11 @@ export async function regenerateImage(
   const policy = getPolicyForMode(mode);
 
   console.info(
-    `[gemini] ${caller} — starting | mode=${mode} | policy_version=${policy.version} | model=${model} | size=${imageSize}`
+    `[gemini] ${caller} — starting | mode=${mode} | model=${model} | size=${imageSize}`
   );
 
   // ========================================================================
-  // STEP 1: ASPECT RATIO DETECTION
+  // ASPECT RATIO DETECTION
   // ========================================================================
   let targetAspectRatio: AspectRatio;
   if (aspectRatio === "auto") {
@@ -1420,185 +1146,83 @@ export async function regenerateImage(
     targetAspectRatio = aspectRatio;
   }
 
-  // ========================================================================
-  // STEP 2: PRE-ANALYSIS (extract PartDescriptor for context-aware generation)
-  // ========================================================================
-  let partDescriptor: PartDescriptor | undefined;
-  if (policy.enablePreAnalysis) {
-    try {
-      partDescriptor = await analyzePartForRegeneration(base64Image, mimeType);
-    } catch (e) {
-      console.warn("[gemini] Pre-analysis failed — proceeding without descriptor:", e);
-    }
-  }
+  const prompt = buildRegenerationPrompt(mode, customPrompt);
 
-  // ========================================================================
-  // STEP 3: GENERATION WITH RETRY LOOP
-  // Outer loop handles targeted retries after verification failures.
-  // Inner withRetry handles API-level failures (rate limits, network errors).
-  // ========================================================================
   const regeneratePolicy: RetryPolicy = {
-    maxAttempts: policy.maxAttempts,
-    baseDelayMs: policy.baseDelayMs,
-    maxDelayMs: policy.maxDelayMs,
-    backoffMultiplier: policy.backoffMultiplier,
+    maxAttempts: 5,
+    baseDelayMs: 800,
+    maxDelayMs: 10000,
+    backoffMultiplier: 2.0,
   };
 
-  let lastVerificationResult: VerificationResult | undefined;
-  let retryDirective = "";
-  let targetedRetryCount = 0;
+  const generatedImageData = await withRetry(async (attempt) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-  for (let targetedAttempt = 0; targetedAttempt <= policy.maxTargetedRetries; targetedAttempt++) {
-    const prompt = buildRegenerationPrompt(mode, customPrompt, partDescriptor, retryDirective);
-
-    const generatedImageData = await withRetry(async (attempt) => {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-      // Model escalation: requested → Pro → 2.5 Flash
-      let currentModel: ModelVersion;
-      if (attempt <= 2) {
-        currentModel = model;
-      } else if (attempt <= 4) {
-        currentModel = "gemini-3-pro-image-preview";
-      } else {
-        currentModel = "gemini-2.5-flash-image";
-      }
-
-      // Temperature: add small increment on later targeted retries to increase diversity
-      const baseTemp = policy.temperature;
-      const retryTempBoost = targetedAttempt * 0.05;
-      const apiTempBoost = attempt > 1 ? 0.03 : 0;
-      const adjustedTemp = Math.min(1.0, baseTemp + retryTempBoost + apiTempBoost);
-
-      console.info(
-        `[gemini] ${caller} — targeted_attempt=${targetedAttempt + 1} api_attempt=${attempt}/${regeneratePolicy.maxAttempts} | model=${currentModel} | mode=${mode} | temp=${adjustedTemp.toFixed(2)} | ratio=${targetAspectRatio}`
-      );
-
-      const parts: any[] = [
-        { text: prompt },
-        { inlineData: { mimeType, data: base64Image } },
-      ];
-
-      const response = await ai.models.generateContent({
-        model: currentModel,
-        contents: { parts },
-        config: {
-          imageConfig: { imageSize, aspectRatio: targetAspectRatio },
-          temperature: adjustedTemp,
-          topP: policy.topP,
-          topK: policy.topK,
-        },
-      });
-
-      const candidate = response.candidates?.[0];
-      if (!candidate) {
-        throw {
-          code: ErrorCode.NO_CANDIDATES,
-          message: "Gemini API returned zero candidates.",
-          retryable: true,
-        } satisfies AppError;
-      }
-
-      if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
-        console.warn(`[gemini] ${caller} — suspicious finish reason: ${candidate.finishReason}`);
-      }
-
-      const { data, mimeType: outMime } = extractImageFromResponse(
-        candidate as Parameters<typeof extractImageFromResponse>[0]
-      );
-
-      if (!data || data.length < 1000) {
-        throw {
-          code: ErrorCode.NO_IMAGE_IN_RESPONSE,
-          message: `Image data suspiciously small (${data?.length ?? 0} bytes). Possible corruption.`,
-          retryable: true,
-        } satisfies AppError;
-      }
-
-      console.info(`[gemini] ${caller} — generated | size=${data.length} bytes | mime=${outMime}`);
-      return { data, mimeType: outMime };
-    }, 'image', regeneratePolicy);
-
-    // ======================================================================
-    // STEP 4: POST-GENERATION VERIFICATION
-    // ======================================================================
-    if (policy.enablePostVerification && partDescriptor) {
-      try {
-        const verResult = await verifyRegeneration(
-          base64Image,
-          mimeType,
-          generatedImageData.data,
-          generatedImageData.mimeType,
-          partDescriptor
-        );
-
-        // Evaluate against policy thresholds
-        const inventoryOk = verResult.inventoryMatchScore >= policy.inventoryMatchThreshold;
-        const fidelityOk  = verResult.dimensionalFidelityScore >= policy.dimensionalFidelityThreshold;
-        const noveltyOk   = policy.noveltyThreshold <= 0 || verResult.noveltyScore >= policy.noveltyThreshold;
-        const complianceOk = !policy.enableComplianceGuardrails || verResult.compliancePassed;
-
-        verResult.passed = inventoryOk && fidelityOk && noveltyOk && complianceOk;
-        lastVerificationResult = verResult;
-
-        console.info(
-          `[gemini] ${caller} — verification | passed=${verResult.passed} | ` +
-          `inventory=${(verResult.inventoryMatchScore * 100).toFixed(0)}% (min ${(policy.inventoryMatchThreshold * 100).toFixed(0)}%) | ` +
-          `fidelity=${(verResult.dimensionalFidelityScore * 100).toFixed(0)}% (min ${(policy.dimensionalFidelityThreshold * 100).toFixed(0)}%) | ` +
-          `novelty=${(verResult.noveltyScore * 100).toFixed(0)}% (min ${(policy.noveltyThreshold * 100).toFixed(0)}%) | ` +
-          `compliance=${complianceOk}`
-        );
-
-        if (verResult.passed) {
-          return {
-            imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
-            aspectRatio: targetAspectRatio,
-            verificationResult: verResult,
-          };
-        }
-
-        // Build targeted retry directive for next attempt
-        if (policy.enableTargetedRetry && targetedAttempt < policy.maxTargetedRetries) {
-          retryDirective = buildTargetedRetryDirective(verResult.failureReasons);
-          targetedRetryCount++;
-          console.warn(
-            `[gemini] ${caller} — verification failed | reasons: ${verResult.failureReasons.map(r => r.type).join(', ')} | targeted_retry=${targetedRetryCount}`
-          );
-          // Brief pause before targeted retry
-          await sleep(1500);
-          continue;
-        }
-
-        // Max targeted retries exhausted — return best result with warning
-        console.warn(`[gemini] ${caller} — max targeted retries exhausted; returning last output with verification attached`);
-        return {
-          imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
-          aspectRatio: targetAspectRatio,
-          verificationResult: verResult,
-        };
-      } catch (verifyError) {
-        // Verification itself failed — log and proceed without gating
-        console.warn("[gemini] Post-generation verification failed:", verifyError);
-        return {
-          imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
-          aspectRatio: targetAspectRatio,
-        };
-      }
+    // Model escalation: requested model → Pro → 2.5 Flash on later retries
+    let currentModel: ModelVersion;
+    if (attempt <= 2) {
+      currentModel = model;
+    } else if (attempt <= 4) {
+      currentModel = "gemini-3-pro-image-preview";
+    } else {
+      currentModel = "gemini-2.5-flash-image";
     }
 
-    // No verification configured — return immediately
-    return {
-      imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
-      aspectRatio: targetAspectRatio,
-    };
-  }
+    const adjustedTemp = Math.min(1.0, policy.temperature + (attempt > 1 ? 0.03 : 0));
 
-  // Should never reach here — TypeScript safety fallback
-  throw {
-    code: ErrorCode.GENERATION_FAILED,
-    message: "regenerateImage: all targeted retry attempts exhausted.",
-    retryable: false,
-  } satisfies AppError;
+    console.info(
+      `[gemini] ${caller} — attempt=${attempt}/${regeneratePolicy.maxAttempts} | model=${currentModel} | mode=${mode} | temp=${adjustedTemp.toFixed(2)} | ratio=${targetAspectRatio}`
+    );
+
+    const response = await ai.models.generateContent({
+      model: currentModel,
+      contents: {
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType, data: base64Image } },
+        ],
+      },
+      config: {
+        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
+        temperature: adjustedTemp,
+        topP: policy.topP,
+        topK: policy.topK,
+      },
+    });
+
+    const candidate = response.candidates?.[0];
+    if (!candidate) {
+      throw {
+        code: ErrorCode.NO_CANDIDATES,
+        message: "Gemini API returned zero candidates.",
+        retryable: true,
+      } satisfies AppError;
+    }
+
+    if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
+      console.warn(`[gemini] ${caller} — suspicious finish reason: ${candidate.finishReason}`);
+    }
+
+    const { data, mimeType: outMime } = extractImageFromResponse(
+      candidate as Parameters<typeof extractImageFromResponse>[0]
+    );
+
+    if (!data || data.length < 1000) {
+      throw {
+        code: ErrorCode.NO_IMAGE_IN_RESPONSE,
+        message: `Image data suspiciously small (${data?.length ?? 0} bytes). Possible corruption.`,
+        retryable: true,
+      } satisfies AppError;
+    }
+
+    console.info(`[gemini] ${caller} — generated | size=${data.length} bytes | mime=${outMime}`);
+    return { data, mimeType: outMime };
+  }, 'image', regeneratePolicy);
+
+  return {
+    imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
+    aspectRatio: targetAspectRatio,
+  };
 }
 
 // ============================================================================
