@@ -301,7 +301,38 @@ A.4 FEATURE INVENTORY
    • All teeth, splines, keyways: identical count and profile.
    • All bends, tabs, flanges: identical angle and 3D geometry.
 
-A.5 NO SHAPE MORPHING
+A.5 CROSS-SECTION TOPOLOGY LOCK — THE MOST CRITICAL RULE
+   The fundamental 3D cross-section profile of every component is FROZEN.
+   Read the reference carefully and identify the exact cross-section before
+   rendering. Then LOCK IT. Any change to the cross-section is a TOPOLOGY
+   VIOLATION that will cause automatic rejection.
+
+   CROSS-SECTION LOCK RULES:
+   • If the reference shows a FLAT PLATE: output MUST be a flat plate.
+     ✗ FAILURE: rendering it with a raised arch or dome.
+     ✗ FAILURE: rendering it as a channel with walls.
+   • If the reference shows a U-CHANNEL (open, walls face outward, NO return lips):
+     output MUST be a U-channel — NOT a C-channel.
+     ✗ FAILURE: adding inward-facing return lips that close the channel top.
+     ✗ FAILURE: adding a flat base under the arch that wasn't in the reference.
+   • If the reference shows an L-BRACKET: output MUST be an L-bracket.
+     ✗ FAILURE: adding a second flange to make it a U or Z.
+   • If the reference shows an OPEN part (clip, bracket, stamped plate):
+     output MUST remain OPEN — do NOT close it into a ring or tube.
+     ✗ FAILURE: connecting the ends of an open clip into a loop.
+   • If the reference shows a part with a LOW, SHALLOW raised bridge:
+     output MUST have a LOW, SHALLOW bridge — not a high semi-circular arch.
+     ✗ FAILURE: exaggerating the bridge height from subtle to dramatic.
+
+   SELF-CHECK — before finalising the render:
+   1. State the cross-section profile of your output: "flat plate / U-channel / L-bracket / …"
+   2. State the cross-section profile of the reference.
+   3. They MUST match exactly.
+   4. State whether the part is open or closed. This must also match.
+   5. Count return lips, raised bridges, flanges. All counts must match.
+   If ANY mismatch: STOP. Do not finalise. Re-render with the correct cross-section.
+
+A.6 NO SHAPE MORPHING
 ${ANTI_MORPHING_DIRECTIVE}
 `;
 
@@ -490,6 +521,7 @@ return a structured JSON object that fully characterises the physical part.
 This analysis will be used to:
 1. Guide AI image generation (the generator needs to know EXACTLY what to preserve).
 2. Verify the generated output against the original.
+3. LOCK the cross-section topology so the generator cannot morph the part's fundamental form.
 
 Return a single JSON object matching this schema exactly:
 
@@ -517,10 +549,27 @@ Return a single JSON object matching this schema exactly:
       "description": "<what was detected>",
       "mustNeutralise": <true | false>
     }
-  ]
+  ],
+  "topologyLock": {
+    "isClosed": <true if part forms a complete closed loop/ring, false if open (channel, clip, bracket, stamped plate)>,
+    "crossSectionProfile": "<exact cross-section at the most representative cut-plane — use terms like: flat plate, U-channel, L-bracket, C-channel, I-beam, hollow cylinder, solid cylinder, T-section, Z-section, shallow-arch plate, angle bracket>",
+    "bendCount": <integer — total number of discrete sharp bends/folds visible in the part; 0 for flat plates>,
+    "flangeCount": <integer — number of distinct flat extending lips/tabs/flanges>,
+    "returnLipCount": <integer — number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>,
+    "raisedBridgeCount": <integer — number of dome-shaped raised bridges; 0 means the part is planar/flat>,
+    "topologySummary": "<1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
+  }
 }
 
-INSTRUCTIONS:
+TOPOLOGY CAPTURE INSTRUCTIONS (critical — errors here cause image hallucinations):
+- isClosed: A washer or snap-ring is closed (true). A clip, U-channel, bracket, or stamped plate is open (false).
+- crossSectionProfile: Look at the part edge-on. Is it flat? L-shaped? U-shaped? C-shaped (U + inward lips)?
+- bendCount: Count every 90°-type fold. A flat plate has 0. An L-bracket has 1. A U-channel has 2.
+- returnLipCount: A U-channel has 0 (walls go straight out). A C-channel has 2 (walls fold back inward at the top).
+- raisedBridgeCount: Look for dome/arch features. A flat plate has 0. A part with one central dome has 1.
+- topologySummary: Be explicit. State "open" or "closed", state "no return lips", state "planar" if flat.
+
+GENERAL INSTRUCTIONS:
 - Be exhaustive in the inventory — list every visible component however small.
 - If you detect no compliance flags, return an empty array for complianceFlags.
 - Return ONLY the JSON object. No markdown, no commentary, no code fences.
@@ -660,11 +709,22 @@ export function buildTargetedRetryDirective(
         break;
       case 'topology_change':
         sections.push(`❌ TOPOLOGY CHANGE — ${reason.details ?? ''}`);
-        sections.push('   Fix: Restore the original assembly structure. Do not move components to new positions.');
+        sections.push('   Fix: Restore the EXACT cross-section profile from the reference.');
+        sections.push('   COMMON MISTAKES TO AVOID:');
+        sections.push('   • Do NOT add inward return lips to a plain U-channel — that turns it into a C-channel (WRONG).');
+        sections.push('   • Do NOT add a continuous flat base under an arch — that closes an open part (WRONG).');
+        sections.push('   • Do NOT add extra flanges or walls that are not in the reference (WRONG).');
+        sections.push('   • Re-examine the reference cross-section. State it explicitly before re-rendering.');
+        sections.push('   MANDATORY SELF-CHECK before finalising: state the cross-section of your output AND the reference. They must match.');
         break;
       case 'morphing':
         sections.push(`❌ SHAPE MORPHING — ${reason.details ?? ''}`);
         sections.push('   Fix: Restore the original part form. Count the loops/bends/coils and match exactly.');
+        sections.push('   COMMON MISTAKES TO AVOID:');
+        sections.push('   • Do NOT exaggerate a shallow raised bridge into a tall semi-circular arch (WRONG).');
+        sections.push('   • Do NOT turn a flat or low-profile feature into a prominent 3D structure (WRONG).');
+        sections.push('   • A shallow bridge must remain shallow — if the original bridge height is ~5–10% of the part width, keep it at that.');
+        sections.push('   MANDATORY SELF-CHECK: measure the relative bridge/arch height in your output vs the reference. Must match within ±15%.');
         break;
       default:
         sections.push(`❌ ${reason.type}: ${reason.details ?? ''}`);

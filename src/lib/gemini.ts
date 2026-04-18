@@ -1251,13 +1251,40 @@ function buildRegenerationPrompt(
           .join('\n')
       : '  • None detected';
 
+    // Build topology lock block — the single most important anti-hallucination signal
+    const tl = partDescriptor.topologyLock;
+    const topologyBlock = tl
+      ? `
+🔒 TOPOLOGY LOCK — THIS DEFINES THE FROZEN 3D FORM OF THE PART
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Open/Closed status  : ${tl.isClosed ? 'CLOSED (forms a complete ring/loop)' : 'OPEN (clip, channel, bracket, stamped plate — NOT a ring)'}
+Cross-section profile: ${tl.crossSectionProfile}
+Bend count          : ${tl.bendCount} distinct bend(s) — your output must have EXACTLY ${tl.bendCount}
+Flange count        : ${tl.flangeCount} flange(s) — your output must have EXACTLY ${tl.flangeCount}
+Return lip count    : ${tl.returnLipCount === 0
+        ? '0 — NO inward-facing return lips. Do NOT add them.'
+        : `${tl.returnLipCount} — your output must have EXACTLY ${tl.returnLipCount}`}
+Raised bridge count : ${tl.raisedBridgeCount === 0
+        ? '0 — part is planar/flat. Do NOT add arches or domes.'
+        : `${tl.raisedBridgeCount} raised bridge(s) — keep height proportional to reference`}
+Summary             : ${tl.topologySummary}
+
+⚠️  MANDATORY SELF-CHECK BEFORE RENDERING:
+   State the cross-section profile of what you are about to render.
+   It MUST exactly match: "${tl.crossSectionProfile}"
+   The part MUST be ${tl.isClosed ? 'CLOSED' : 'OPEN'}.
+   Bend count must be ${tl.bendCount}. Return lips must be ${tl.returnLipCount}. Raised bridges must be ${tl.raisedBridgeCount}.
+   If ANY of these do not match: STOP. Correct the cross-section before continuing.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      : '';
+
     sections.push(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART CONTEXT — Pre-analysis descriptor (use this to guide generation)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Assembly: ${partDescriptor.assemblyDescription}
 View type in original: ${partDescriptor.viewType}
-
+${topologyBlock}
 INVENTORY (every item must appear in your output):
 ${inventoryList}
 
