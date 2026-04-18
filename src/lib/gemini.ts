@@ -1183,6 +1183,18 @@ ${descriptorJson}
 
     try {
       const raw = JSON.parse(text);
+
+      // Hard-cap fidelity when topology or morphing failures are present.
+      // The Gemini verifier sometimes assigns 0.40 to fundamentally wrong shapes;
+      // this guard ensures those cases reliably fail the 0.75 fidelity threshold.
+      const hasTopologyOrMorphingFailure = Array.isArray(raw.failureReasons) &&
+        raw.failureReasons.some((r: { type: string }) =>
+          r.type === 'topology_change' || r.type === 'morphing'
+        );
+      if (hasTopologyOrMorphingFailure) {
+        raw.dimensionalFidelityScore = Math.min(raw.dimensionalFidelityScore ?? 0, 0.15);
+      }
+
       const overallScore = (
         (raw.inventoryMatchScore ?? 0) * 0.40 +
         (raw.dimensionalFidelityScore ?? 0) * 0.35 +
@@ -1228,9 +1240,70 @@ function buildRegenerationPrompt(
     ? IMAGEREGENERATOR_CLONE_PROMPT
     : IMAGEREGENERATOR_CREATIVE_PROMPT;
 
-  const sections: string[] = [base];
+  // =========================================================================
+  // TOPOLOGY PREAMBLE — placed FIRST so it is the first thing the model reads.
+  // Research and prompt-engineering practice show that constraints placed early
+  // in context have stronger influence on generation than those at the end.
+  // =========================================================================
+  const tl = partDescriptor?.topologyLock;
+  const topologyPreamble = tl
+    ? `
+╔═══════════════════════════════════════════════════════════════════╗
+║  🔒  FROZEN PART SPECIFICATION — READ THIS BEFORE ANYTHING ELSE  ║
+╚═══════════════════════════════════════════════════════════════════╝
 
-  // Inject part descriptor context for precise generation guidance
+These values are derived from automated analysis of the reference image.
+You MUST render EXACTLY this specification. Any deviation causes REJECTION.
+
+Part description : ${partDescriptor!.assemblyDescription}
+Cross-section    : ${tl.crossSectionProfile}
+Open / Closed    : ${tl.isClosed ? 'CLOSED — forms a complete ring/loop' : 'OPEN — NOT a ring. Do NOT close it.'}
+Bend count       : ${tl.bendCount} — your output must have EXACTLY ${tl.bendCount} bend(s)
+Return lips      : ${tl.returnLipCount === 0
+      ? '0 — NONE. Do NOT add inward-facing lips or flanges. Adding them turns a U-channel into a C-channel (WRONG).'
+      : `${tl.returnLipCount} — your output must have EXACTLY ${tl.returnLipCount}`}
+Raised bridges   : ${tl.raisedBridgeCount === 0
+      ? '0 — part is PLANAR/FLAT. Do NOT add arches, domes, or raised bridges of any kind.'
+      : `${tl.raisedBridgeCount} raised bridge(s)`}
+${tl.raisedBridgeCount > 0
+      ? `Bridge height    : ≈${tl.bridgeHeightRatioPercent}% of total part width — SHALLOW. Do NOT exaggerate. Must NOT exceed ${Math.min(100, tl.bridgeHeightRatioPercent + 10)}% height ratio.`
+      : ''}
+Summary          : ${tl.topologySummary}
+
+⛔ HARD STOPS FOR THIS SPECIFIC PART:
+${!tl.isClosed ? '• DO NOT close the open part into a ring, tube, or loop.\n' : ''}${tl.returnLipCount === 0 ? '• DO NOT add inward-facing return lips — that morphs it from a U-channel into a C-channel.\n' : ''}${tl.raisedBridgeCount === 0 ? '• DO NOT add any raised arch, dome, or bridge — the part is FLAT/PLANAR.\n' : ''}${tl.raisedBridgeCount > 0 ? `• DO NOT exaggerate the bridge height — it is only ${tl.bridgeHeightRatioPercent}% of the part width. A tall semi-circular arch is WRONG.\n` : ''}• DO NOT substitute circular holes/notches with rectangular cutouts or vice versa.
+• DO NOT add flanges, walls, or features that are not in the reference.
+
+MANDATORY SELF-CHECK BEFORE RENDERING:
+  1. State: "My output cross-section is: ___" — must match "${tl.crossSectionProfile}"
+  2. State: "My output is [open/closed]" — must match "${tl.isClosed ? 'closed' : 'open'}"
+  3. State: "Return lips in my output: ___" — must be ${tl.returnLipCount}
+  4. State: "Raised bridges in my output: ___" — must be ${tl.raisedBridgeCount}
+  ${tl.raisedBridgeCount > 0 ? `5. State: "Bridge height ratio: ___%" — must be ≤${tl.bridgeHeightRatioPercent + 10}%` : ''}
+  If ANY of these are wrong: STOP. Do not render. Correct the specification first.
+
+╔═══════════════════════════════════════════════════════════════════╗
+║                    END FROZEN SPECIFICATION                       ║
+╚═══════════════════════════════════════════════════════════════════╝
+`
+    : '';
+
+  const sections: string[] = [];
+
+  // 1. Topology preamble (highest priority — first in context)
+  if (topologyPreamble) {
+    sections.push(topologyPreamble);
+  }
+
+  // 2. Targeted retry directive (if this is a corrective attempt)
+  if (retryDirective?.trim()) {
+    sections.push(retryDirective);
+  }
+
+  // 3. Base prompt (full creative or clone directive)
+  sections.push(base);
+
+  // 4. Part context block (inventory, materials, features + topology reminder)
   if (partDescriptor) {
     const inventoryList = partDescriptor.inventory
       .map(item => `  • ${item.count}× ${item.name} (${item.category}): ${item.shortDescription}`)
@@ -1251,31 +1324,12 @@ function buildRegenerationPrompt(
           .join('\n')
       : '  • None detected';
 
-    // Build topology lock block — the single most important anti-hallucination signal
-    const tl = partDescriptor.topologyLock;
-    const topologyBlock = tl
+    // Topology reminder (condensed) — reinforces the preamble from the other end
+    const topologyReminder = tl
       ? `
-🔒 TOPOLOGY LOCK — THIS DEFINES THE FROZEN 3D FORM OF THE PART
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Open/Closed status  : ${tl.isClosed ? 'CLOSED (forms a complete ring/loop)' : 'OPEN (clip, channel, bracket, stamped plate — NOT a ring)'}
-Cross-section profile: ${tl.crossSectionProfile}
-Bend count          : ${tl.bendCount} distinct bend(s) — your output must have EXACTLY ${tl.bendCount}
-Flange count        : ${tl.flangeCount} flange(s) — your output must have EXACTLY ${tl.flangeCount}
-Return lip count    : ${tl.returnLipCount === 0
-        ? '0 — NO inward-facing return lips. Do NOT add them.'
-        : `${tl.returnLipCount} — your output must have EXACTLY ${tl.returnLipCount}`}
-Raised bridge count : ${tl.raisedBridgeCount === 0
-        ? '0 — part is planar/flat. Do NOT add arches or domes.'
-        : `${tl.raisedBridgeCount} raised bridge(s) — keep height proportional to reference`}
-Summary             : ${tl.topologySummary}
-
-⚠️  MANDATORY SELF-CHECK BEFORE RENDERING:
-   State the cross-section profile of what you are about to render.
-   It MUST exactly match: "${tl.crossSectionProfile}"
-   The part MUST be ${tl.isClosed ? 'CLOSED' : 'OPEN'}.
-   Bend count must be ${tl.bendCount}. Return lips must be ${tl.returnLipCount}. Raised bridges must be ${tl.raisedBridgeCount}.
-   If ANY of these do not match: STOP. Correct the cross-section before continuing.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+🔒 TOPOLOGY REMINDER (see full spec at the top of this prompt):
+   Cross-section: ${tl.crossSectionProfile} | Open/Closed: ${tl.isClosed ? 'CLOSED' : 'OPEN'} | Return lips: ${tl.returnLipCount} | Bridges: ${tl.raisedBridgeCount}${tl.raisedBridgeCount > 0 ? ` (height ≤${tl.bridgeHeightRatioPercent + 10}% of part width)` : ''}
+`
       : '';
 
     sections.push(`
@@ -1284,7 +1338,7 @@ PART CONTEXT — Pre-analysis descriptor (use this to guide generation)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Assembly: ${partDescriptor.assemblyDescription}
 View type in original: ${partDescriptor.viewType}
-${topologyBlock}
+${topologyReminder}
 INVENTORY (every item must appear in your output):
 ${inventoryList}
 
@@ -1299,12 +1353,7 @@ ${complianceNotes}
 `);
   }
 
-  // Prepend targeted retry directive if this is a corrective attempt
-  if (retryDirective?.trim()) {
-    sections.unshift(retryDirective);
-  }
-
-  // Append user custom instructions last
+  // 5. Custom prompt (user instructions, last)
   if (customPrompt.trim()) {
     sections.push(`
 ADDITIONAL INSTRUCTIONS FROM USER:

@@ -296,7 +296,11 @@ A.3 PROPORTIONAL FIDELITY
 
 A.4 FEATURE INVENTORY
    • All holes: correct diameter ratio and spatial position relative to the part.
-   • All slots, notches, cutouts: correct width/length/depth relationships.
+   • All slots, notches, cutouts: correct width/length/depth relationships
+     AND correct SHAPE — a circular notch must remain circular (NOT rectangular or oval);
+     a rectangular slot must remain rectangular (NOT circular or irregular).
+     ✗ FAILURE: substituting a circular semi-circular notch with a rectangular cutout.
+     ✗ FAILURE: substituting a rectangular slot with a round hole.
    • All threads: same pitch and thread form visible on the same fasteners.
    • All teeth, splines, keyways: identical count and profile.
    • All bends, tabs, flanges: identical angle and 3D geometry.
@@ -361,6 +365,18 @@ B.1 CAMERA / POINT-OF-VIEW TRANSFORMATION ⬅ REQUIRED
    • Constraint: the part must still be fully visible; do not crop critical features.
    • When unseen surfaces are exposed by rotation: render them as clean, flat,
      logically consistent geometry — do NOT invent complex mechanisms.
+
+   ⚠️  FLAT / PLANAR / STAMPED PARTS — CAMERA ROTATION SAFETY RULE:
+   If the part is a FLAT PLATE, SHALLOW-ARCH PLATE, THIN STAMPED BRACKET, or
+   any part where the dominant form is planar (thickness ≤ ~15% of its width):
+   • SAFE transformation: yaw (rotate around the vertical axis, ≤ 25°) combined
+     with a new lighting setup and material quality improvement.
+   • UNSAFE: applying pitch or roll that exposes an ambiguous cut-face —
+     because the model will INVENT geometry to fill that face, causing topology
+     violations (adding walls, arches, flanges that don't exist).
+   • When in doubt for flat parts: choose a yaw rotation + better lighting.
+     A clear in-plane rotation is MORE distinct than a pitch rotation that
+     accidentally morphs the part's cross-section.
 
 B.2 LIGHTING TRANSFORMATION ⬅ REQUIRED
    • Apply a new professional three-point studio lighting setup:
@@ -557,6 +573,7 @@ Return a single JSON object matching this schema exactly:
     "flangeCount": "<integer: number of distinct flat extending lips/tabs/flanges>",
     "returnLipCount": "<integer: number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>",
     "raisedBridgeCount": "<integer: number of dome-shaped raised bridges; 0 means the part is planar/flat>",
+    "bridgeHeightRatioPercent": "<integer 0–100: height of the tallest raised bridge expressed as a percentage of the total part width. 0 if raisedBridgeCount is 0. Example: a 2mm-high bridge on a 25mm-wide part = 8. A shallow bridge is typically 5–15%. A tall semi-circular arch would be 40–50%.>",
     "topologySummary": "<string: 1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
   }
 }
@@ -567,7 +584,8 @@ TOPOLOGY CAPTURE INSTRUCTIONS (critical — errors here cause image hallucinatio
 - bendCount: Count every 90°-type fold. A flat plate has 0. An L-bracket has 1. A U-channel has 2.
 - returnLipCount: A U-channel has 0 (walls go straight out). A C-channel has 2 (walls fold back inward at the top).
 - raisedBridgeCount: Look for dome/arch features. A flat plate has 0. A part with one central dome has 1.
-- topologySummary: Be explicit. State "open" or "closed", state "no return lips", state "planar" if flat.
+- bridgeHeightRatioPercent: Measure the bridge's HEIGHT relative to the part's total WIDTH. A very shallow bridge (2mm on a 25mm part) = ~8%. A prominent arch (15mm on a 25mm part) = ~60%. If raisedBridgeCount is 0, set this to 0. This value is used as an explicit upper bound during generation — be accurate.
+- topologySummary: Be explicit. State "open" or "closed", state "no return lips", state "planar" if flat. If a bridge exists, state "shallow bridge (~N% height ratio)".
 
 GENERAL INSTRUCTIONS:
 - Be exhaustive in the inventory — list every visible component however small.
@@ -633,6 +651,21 @@ SCORING GUIDANCE:
     0.7 = slight expected distortion due to perspective change (<10% drift)
     0.4 = noticeable scaling difference in key features
     0.0 = proportions unrecognisable
+
+    ⚠️  TOPOLOGY AND MORPHING OVERRIDE — MANDATORY:
+    If you include a "topology_change" failure reason: dimensionalFidelityScore
+    MUST be 0.00–0.15. A part with the wrong cross-section (U→C, flat→arch,
+    open→closed) has near-zero dimensional fidelity regardless of other features.
+    If you include a "morphing" failure reason: dimensionalFidelityScore
+    MUST be 0.00–0.15. A part with the wrong number of coils/loops/bends/bridges
+    is fundamentally wrong.
+    Do NOT score these cases at 0.4 or higher. 0.15 is the hard ceiling.
+
+    BRIDGE HEIGHT OVERRIDE:
+    If a raised bridge in the generated image is more than 2× taller than in the
+    reference (e.g., reference has a shallow ~8% height-ratio bridge but output
+    has a dramatic 40%+ arch), add a "morphing" failure reason AND set
+    dimensionalFidelityScore ≤ 0.20.
 
   noveltyScore (creative mode gate):
     1.0 = completely different photograph (dramatic angle + lighting change)

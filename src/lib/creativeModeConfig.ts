@@ -12,7 +12,7 @@
 // VERSION — bump when changing policies/thresholds so changes are auditable
 // ============================================================================
 
-export const CREATIVE_MODE_VERSION = '2.1.0';
+export const CREATIVE_MODE_VERSION = '2.2.0';
 
 // ============================================================================
 // TYPES
@@ -113,6 +113,14 @@ export interface TopologyLock {
    * 0 means the part is flat/planar.
    */
   raisedBridgeCount: number;
+  /**
+   * Height of the tallest raised bridge as a percentage of the total part width.
+   * Only meaningful when raisedBridgeCount > 0.
+   * Example: 8 means the bridge is ~8% as tall as the part is wide (very shallow).
+   * This quantitative constraint prevents exaggerating a shallow 2mm feature
+   * into a tall semi-circular arch.
+   */
+  bridgeHeightRatioPercent: number;
   /** Free-text summary of the topology for model guidance. */
   topologySummary: string;
 }
