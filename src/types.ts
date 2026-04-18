@@ -1,0 +1,462 @@
+import { SchematicStyle } from "./lib/gemini";
+import { ExtractedHotspot, LegendEntry, CorrelatedData } from "./lib/schematic-legend-processor";
+
+export interface PipelineFile {
+  id: string;
+  file: File;
+  filename: string;
+  type: 'pdf' | 'image';
+  status: 'pending' | 'processing' | 'success' | 'error';
+  workflowState: 'pending' | 'classifying' | 'legend_approval' | 'enhancing' | 'enhancement_approval' | 'extracting_hotspots' | 'success' | 'error';
+  progress: number;
+  currentStep: string;
+  error?: string;
+  
+  // Intermediate and final data
+  pages?: {
+    index: number;
+    originalImage: string;
+    width: number;
+    height: number;
+    enhancedImage?: string;
+    type?: 'SCHEMATIC' | 'LEGEND' | 'OTHER';
+    hotspots?: ExtractedHotspot[];
+    legendEntries?: LegendEntry[];
+  }[];
+  legendEntries?: LegendEntry[];
+  correlatedData?: CorrelatedData[];
+  referenceImages?: { url: string; mimeType: string }[];
+  existingJsonFile?: File;
+  existingJsonData?: any;
+}
+
+// ============================================================================
+// CORE PRIMITIVES — Image & Model Configuration
+// ============================================================================
+
+export type AspectRatio =
+  | "1:1"
+  | "3:4"
+  | "4:3"
+  | "9:16"
+  | "16:9"
+  | "1:4"
+  | "1:8"
+  | "4:1"
+  | "8:1";
+
+export type AspectRatioOption = AspectRatio | "auto";
+
+export type ImageSize = "512px" | "1K" | "2K" | "4K";
+
+export type ModelVersion =
+  | "gemini-3.1-flash-lite-preview"
+  | "gemini-3-flash-preview"
+  | "gemini-3.1-flash-image-preview"
+  | "gemini-3-pro-image-preview"
+  | "gemini-2.5-flash-image";
+
+export type OutputQuality = "standard" | "high" | "maximum";
+
+export type ProcessingComplexity = "low" | "medium" | "high";
+
+// ============================================================================
+// ERROR SYSTEM — Structured error classification
+// ============================================================================
+
+export enum ErrorCode {
+  // Authentication
+  MISSING_API_KEY       = "ERR_MISSING_API_KEY",
+  INVALID_API_KEY       = "ERR_INVALID_API_KEY",
+  AUTH_FAILED           = "ERR_AUTH_FAILED",
+
+  // Quota & Billing
+  QUOTA_EXCEEDED        = "ERR_QUOTA_EXCEEDED",
+  BILLING_REQUIRED      = "ERR_BILLING_REQUIRED",
+  RATE_LIMITED          = "ERR_RATE_LIMITED",
+
+  // Input Validation
+  INVALID_IMAGE         = "ERR_INVALID_IMAGE",
+  INVALID_MIME_TYPE     = "ERR_INVALID_MIME_TYPE",
+  IMAGE_TOO_LARGE       = "ERR_IMAGE_TOO_LARGE",
+  EMPTY_INSTRUCTION     = "ERR_EMPTY_INSTRUCTION",
+  INVALID_STYLE         = "ERR_INVALID_STYLE",
+  INVALID_CONFIG        = "ERR_INVALID_CONFIG",
+
+  // Generation
+  NO_CANDIDATES         = "ERR_NO_CANDIDATES",
+  NO_IMAGE_IN_RESPONSE  = "ERR_NO_IMAGE_IN_RESPONSE",
+  TEXT_RESPONSE         = "ERR_TEXT_RESPONSE",          // Model refused with text
+  CONTENT_FILTERED      = "ERR_CONTENT_FILTERED",
+  GENERATION_FAILED     = "ERR_GENERATION_FAILED",
+
+  // Network
+  NETWORK_ERROR         = "ERR_NETWORK",
+  TIMEOUT               = "ERR_TIMEOUT",
+  RETRIES_EXHAUSTED     = "ERR_RETRIES_EXHAUSTED",
+
+  // Unknown
+  UNKNOWN               = "ERR_UNKNOWN",
+}
+
+export interface AppError {
+  code: ErrorCode;
+  message: string;
+  retryable: boolean;
+  attempt?: number;
+  originalError?: unknown;
+}
+
+// ============================================================================
+// VALIDATION SYSTEM
+// ============================================================================
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ImageValidation extends ValidationResult {
+  detectedMimeType?: string;
+  estimatedSizeKB?: number;
+  dimensions?: { width: number; height: number };
+}
+
+// ============================================================================
+// GENERATION & PROCESSING
+// ============================================================================
+
+export type GenerationStatus =
+  | "idle"
+  | "validating"
+  | "queued"
+  | "generating"
+  | "post_processing"
+  | "complete"
+  | "failed"
+  | "cancelled";
+
+export interface GenerationProgress {
+  status: GenerationStatus;
+  percent: number;             // 0–100
+  message: string;
+  attempt?: number;
+  maxAttempts?: number;
+  elapsedMs?: number;
+  estimatedRemainingMs?: number;
+}
+
+export interface GenerationMetadata {
+  model: ModelVersion;
+  styles: SchematicStyle[];
+  quality: OutputQuality;
+  aspectRatio: AspectRatio;
+  imageSize: ImageSize;
+  keepLabels: boolean;
+  preserveGeometry: boolean;
+  enhanceDetails: boolean;
+  customPrompt: string;
+  processingComplexity: ProcessingComplexity;
+  durationMs: number;
+  attempt: number;
+  timestamp: number;
+}
+
+// ============================================================================
+// IMAGE TYPES
+// ============================================================================
+
+export type ImageMimeType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif";
+
+export interface GeneratedImage {
+  id: string;
+  aspectRatio: AspectRatio;
+  imageUrl: string;             // data URI or remote URL
+  mimeType?: ImageMimeType;
+  sizeBytes?: number;
+  createdAt: number;
+  metadata?: GenerationMetadata;
+}
+
+export interface ImageDiff {
+  before: string;               // data URI
+  after: string;                // data URI
+  label?: string;
+}
+
+// ============================================================================
+// SCHEMATIC ANALYSIS — Optional AI pre-analysis contract
+// ============================================================================
+
+export interface ComponentSummary {
+  name: string;
+  count: number;
+  category: "fastener" | "structural" | "mechanical" | "electrical" | "fluid" | "other";
+  confidence: number;           // 0.0–1.0
+}
+
+export interface SchematicAnalysis {
+  componentCount: number;
+  components: ComponentSummary[];
+  detectedStyle: SchematicStyle | null;
+  hasLabels: boolean;
+  hasGrid: boolean;
+  estimatedComplexity: ProcessingComplexity;
+  viewType: "orthographic" | "isometric" | "perspective" | "exploded" | "cross_section" | "unknown";
+  confidence: number;           // 0.0–1.0
+  analysisMs: number;
+}
+
+// ============================================================================
+// REFINEMENT HISTORY — Immutable audit trail
+// ============================================================================
+
+export interface RefinementEntry {
+  id: string;
+  instruction: string;
+  imageBefore: string;          // data URI snapshot
+  imageAfter: string;           // data URI
+  createdAt: number;
+  durationMs: number;
+  model: ModelVersion;
+}
+
+// ============================================================================
+// PROJECT — Core domain entity
+// ============================================================================
+
+export interface ProjectSettings {
+  styles: SchematicStyle[];
+  keepLabels: boolean;
+  aspectRatio: AspectRatioOption;
+  aspectRatios?: AspectRatioOption[];
+  isMultiRatio?: boolean;
+  imageSize: ImageSize;
+  model: ModelVersion;
+  customPrompt: string;
+  preserveGeometry: boolean;
+  enhanceDetails: boolean;
+  outputQuality: OutputQuality;
+}
+
+export interface RawHotspot {
+  id: string;
+  label: string;
+  box_2d: [number, number, number, number];
+  part_box_2d?: [number, number, number, number];
+  confidence: number;
+}
+
+export interface Hotspot extends RawHotspot {
+  x_pct: number;
+  y_pct: number;
+  shape: 'circle' | 'square' | 'rectangle';
+  woo_product_id?: number;
+  woo_sku?: string;
+  local_target_id?: string;
+  bbox: { x: number; y: number; w: number; h: number }; // percentage coordinates 0-100
+}
+
+export interface Project {
+  // Identity
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  workflowType?: "generate" | "refine" | "extract" | "batch"; // "generate" for new sketches, "refine" for existing diagrams, "extract" for hotspot extraction, "batch" for batch processing
+  
+  // WordPress / Export Metadata
+  schema_version?: string;
+  image_filename?: string;
+  wp_media_id?: number;
+  image_natural_width?: number;
+  image_natural_height?: number;
+
+  // Local Debugging / Development
+  local_image_id?: string;
+  local_image_path?: string;
+  dev_mode?: boolean;
+  existingJsonFile?: File;
+  existingJsonData?: any;
+
+  // Images
+  originalImage: string;        // data URI
+  originalMimeType?: ImageMimeType;
+  referenceImage?: string;      // data URI (real product image) - legacy
+  referenceMimeType?: string;   // legacy
+  referenceImages?: { url: string; mimeType: string }[]; // multiple reference images
+  enhancedImage: string | null; // data URI
+  generatedImages?: GeneratedImage[];
+
+  // Settings (flattened for backwards compat + nested for new consumers)
+  styles: SchematicStyle[];
+  keepLabels: boolean;
+  aspectRatio: AspectRatioOption;
+  aspectRatios?: AspectRatioOption[];
+  isMultiRatio?: boolean;
+  imageSize: ImageSize;
+  model: ModelVersion;
+  customPrompt: string;
+  preserveGeometry?: boolean;
+  enhanceDetails?: boolean;
+  outputQuality?: OutputQuality;
+
+  // Metadata
+  analysis?: SchematicAnalysis;
+  refinementHistory?: RefinementEntry[];
+  lastGenerationMetadata?: GenerationMetadata;
+  tags?: string[];
+  hotspots?: Hotspot[];
+  notes?: string;
+  isFavorite?: boolean;
+  isArchived?: boolean;
+  batchItems?: BatchItem[];
+}
+
+export interface BatchItem {
+  id: string;
+  filename: string;
+  groupName: string;
+  originalDataUri: string;
+  status: 'pending' | 'processing' | 'success' | 'error' | 'approved' | 'extracting_hotspots';
+  enhancedDataUri?: string;
+  hotspots?: Hotspot[];
+  error?: string;
+}
+
+export interface ToastMessage {
+  id: string;
+  type: "success" | "error" | "warning" | "info";
+  title: string;
+  description?: string;
+  durationMs?: number;
+  action?: { label: string; onClick: () => void };
+}
+
+export interface ModalState {
+  open: boolean;
+  type?: "settings" | "preview" | "compare" | "export" | "delete_confirm";
+  payload?: unknown;
+}
+
+export interface AppState {
+  projects: Project[];
+  activeProjectId: string | null;
+  generationProgress: GenerationProgress | null;
+  toast: ToastMessage | null;
+  modal: ModalState;
+  apiKeyReady: boolean;
+  theme: "light" | "dark" | "system";
+}
+
+// ============================================================================
+// EXPORT / IMPORT
+// ============================================================================
+
+export type ExportFormat = "png" | "jpeg" | "webp" | "svg";
+
+export interface ExportOptions {
+  format: ExportFormat;
+  quality: number;              // 0–100 for lossy formats
+  scale: number;                // 1x, 2x, 4x
+  includeMetadata: boolean;
+  filename?: string;
+}
+
+export interface ProjectExportBundle {
+  version: "3.0";
+  exportedAt: number;
+  project: Project;
+  images: Record<string, string>; // id → data URI
+}
+
+// ============================================================================
+// WINDOW AUGMENTATION — AI Studio API contract
+// ============================================================================
+
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
+
+// ============================================================================
+// TYPE GUARDS
+// ============================================================================
+
+export function isAppError(e: unknown): e is AppError {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    "message" in e &&
+    "retryable" in e
+  );
+}
+
+export function isGeneratedImage(obj: unknown): obj is GeneratedImage {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "id" in obj &&
+    "imageUrl" in obj &&
+    "aspectRatio" in obj &&
+    "createdAt" in obj
+  );
+}
+
+export function isProject(obj: unknown): obj is Project {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "id" in obj &&
+    "originalImage" in obj &&
+    "styles" in obj
+  );
+}
+
+// ============================================================================
+// UTILITY MAPS — Centralised display metadata
+// ============================================================================
+
+export const ASPECT_RATIO_LABELS: Record<AspectRatioOption, string> = {
+  "auto": "Auto (AI Detected)",
+  "1:1":  "Square (1:1)",
+  "3:4":  "Portrait (3:4)",
+  "4:3":  "Landscape (4:3)",
+  "9:16": "Tall (9:16)",
+  "16:9": "Desktop (16:9)",
+  "1:4":  "Narrow (1:4)",
+  "1:8":  "Ultra-Narrow (1:8)",
+  "4:1":  "Banner (4:1)",
+  "8:1":  "Ultra-Wide (8:1)",
+};
+
+export const IMAGE_SIZE_LABELS: Record<ImageSize, string> = {
+  "512px": "512 px  (Draft)",
+  "1K":    "1024 px (Standard)",
+  "2K":    "2048 px (High)",
+  "4K":    "4096 px (Ultra)",
+};
+
+export const MODEL_LABELS: Record<ModelVersion, string> = {
+  "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite (Fast)",
+  "gemini-3-flash-preview": "Gemini 3 Flash (Standard)",
+  "gemini-3.1-flash-image-preview": "Gemini 3.1 Flash  (Fast)",
+  "gemini-3-pro-image-preview":     "Gemini 3 Pro      (Precision)",
+  "gemini-2.5-flash-image":         "Gemini 2.5 Flash  (Fallback)",
+};
+
+export const QUALITY_LABELS: Record<OutputQuality, string> = {
+  standard: "Standard  — fast turnaround",
+  high:     "High      — enhanced fidelity",
+  maximum:  "Maximum   — production ready",
+};

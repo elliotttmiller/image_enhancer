@@ -1,0 +1,5 @@
+{
+  "name": "Schematic Enhancer",
+  "description": "Process multi-page PDFs to extract schematic diagram hotspots and legend key tables using AI.",
+  "requestFramePermissions": []
+}
