@@ -551,13 +551,13 @@ Return a single JSON object matching this schema exactly:
     }
   ],
   "topologyLock": {
-    "isClosed": <true if part forms a complete closed loop/ring, false if open (channel, clip, bracket, stamped plate)>,
-    "crossSectionProfile": "<exact cross-section at the most representative cut-plane — use terms like: flat plate, U-channel, L-bracket, C-channel, I-beam, hollow cylinder, solid cylinder, T-section, Z-section, shallow-arch plate, angle bracket>",
-    "bendCount": <integer — total number of discrete sharp bends/folds visible in the part; 0 for flat plates>,
-    "flangeCount": <integer — number of distinct flat extending lips/tabs/flanges>,
-    "returnLipCount": <integer — number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>,
-    "raisedBridgeCount": <integer — number of dome-shaped raised bridges; 0 means the part is planar/flat>,
-    "topologySummary": "<1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
+    "isClosed": "<boolean: true if the part forms a complete closed loop/ring (e.g. washer, snap-ring), false if open (e.g. channel, clip, bracket, stamped plate)>",
+    "crossSectionProfile": "<string: exact cross-section at the most representative cut-plane — use terms like: flat plate, U-channel, L-bracket, C-channel, I-beam, hollow cylinder, solid cylinder, T-section, Z-section, shallow-arch plate, angle bracket>",
+    "bendCount": "<integer: total number of discrete sharp bends/folds visible in the part; 0 for flat plates>",
+    "flangeCount": "<integer: number of distinct flat extending lips/tabs/flanges>",
+    "returnLipCount": "<integer: number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>",
+    "raisedBridgeCount": "<integer: number of dome-shaped raised bridges; 0 means the part is planar/flat>",
+    "topologySummary": "<string: 1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
   }
 }
 

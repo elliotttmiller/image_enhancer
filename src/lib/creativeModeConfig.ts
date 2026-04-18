@@ -167,7 +167,7 @@ export const CREATIVE_POLICY: ModePolicy = {
 
   // Lower temperature reduces morphing/hallucination while still allowing
   // camera-angle and lighting variation (the intentional transformations).
-  temperature: 0.38,
+  temperature: 0.45,
   topP: 0.92,
   topK: 40,
 
