@@ -12,7 +12,7 @@
 // VERSION — bump when changing policies/thresholds so changes are auditable
 // ============================================================================
 
-export const CREATIVE_MODE_VERSION = '2.0.0';
+export const CREATIVE_MODE_VERSION = '2.2.0';
 
 // ============================================================================
 // TYPES
@@ -79,6 +79,50 @@ export interface PartDescriptor {
   distinctiveFeatures: string[];
   /** IP/copyright flags that must be neutralised in creative mode */
   complianceFlags: ComplianceFlag[];
+  /**
+   * Cross-section and topology descriptor — frozen during creative rendering.
+   * Describes the OPEN/CLOSED status, cross-section profile, and exact bend/
+   * flange counts so the generator cannot morph the fundamental 3D form.
+   */
+  topologyLock?: TopologyLock;
+}
+
+export interface TopologyLock {
+  /**
+   * Whether the part forms a closed loop/ring (true) or is open/channel/clip (false).
+   * Example: a U-channel is open; a complete ring washer is closed.
+   */
+  isClosed: boolean;
+  /**
+   * Primary cross-section profile at the most representative cut-plane.
+   * Use plain geometry terms: "flat plate", "U-channel", "L-bracket", "C-channel",
+   * "I-beam", "hollow cylinder", "solid cylinder", "T-section", "Z-section", etc.
+   */
+  crossSectionProfile: string;
+  /** Total number of discrete bends (90°-type sharp folds) visible in the part. */
+  bendCount: number;
+  /** Total number of distinct flanges (flat extending lips/tabs). */
+  flangeCount: number;
+  /**
+   * Number of inward-facing return lips (lips that fold back toward the part centre).
+   * 0 means none — critical for distinguishing U-channel from C-channel.
+   */
+  returnLipCount: number;
+  /**
+   * Number of raised or arched bridges (dome-shaped raised areas).
+   * 0 means the part is flat/planar.
+   */
+  raisedBridgeCount: number;
+  /**
+   * Height of the tallest raised bridge as a percentage of the total part width.
+   * Only meaningful when raisedBridgeCount > 0.
+   * Example: 8 means the bridge is ~8% as tall as the part is wide (very shallow).
+   * This quantitative constraint prevents exaggerating a shallow 2mm feature
+   * into a tall semi-circular arch.
+   */
+  bridgeHeightRatioPercent: number;
+  /** Free-text summary of the topology for model guidance. */
+  topologySummary: string;
 }
 
 export interface InventoryItem {
@@ -116,6 +160,16 @@ export type FailureReason =
   | { type: 'topology_change'; details: string }
   | { type: 'morphing'; details: string };
 
+/**
+ * Maximum dimensionalFidelityScore that may be assigned when a topology_change
+ * or morphing failure is present. A part with the wrong fundamental 3D form
+ * (e.g. U-channel → C-channel, flat → arch) has near-zero dimensional fidelity
+ * regardless of how well other proportions match. Keeping this value low (0.15)
+ * ensures the 0.75 fidelity threshold reliably gates these outputs.
+ * Must be kept in sync with the ceiling stated in GENERATION_VERIFICATION_PROMPT.
+ */
+export const TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE = 0.15;
+
 // ============================================================================
 // POLICIES
 // ============================================================================
@@ -129,18 +183,28 @@ export const CREATIVE_POLICY: ModePolicy = {
   name: 'creative',
   version: CREATIVE_MODE_VERSION,
 
-  temperature: 0.55,
-  topP: 0.95,
-  topK: 45,
+  // Lower temperature reduces morphing/hallucination while still allowing
+  // camera-angle and lighting variation (the intentional transformations).
+  temperature: 0.45,
+  topP: 0.92,
+  topK: 40,
 
   maxAttempts: 6,
   baseDelayMs: 2000,
   maxDelayMs: 20000,
   backoffMultiplier: 2.5,
-  maxTargetedRetries: 2,
+  // Extra targeted retry gives the corrective prompt one more chance to fix
+  // topology/morphing failures before the best result is accepted.
+  maxTargetedRetries: 3,
 
-  inventoryMatchThreshold: 0.85,
-  dimensionalFidelityThreshold: 0.70,
+  // Tighter acceptance gates: topology hallucinations now need to score higher
+  // to pass, which forces more targeted retries on bad outputs.
+  // 0.90 inventory: at most ~1 small ambiguous part may be unaccounted for.
+  // 0.75 fidelity:  allows mild perspective-induced drift (~10%) while still
+  //                 rejecting cross-section violations (which score ≤0.15 after
+  //                 the TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE hard-cap).
+  inventoryMatchThreshold: 0.90,
+  dimensionalFidelityThreshold: 0.75,
   noveltyThreshold: 0.30,
 
   enablePreAnalysis: true,

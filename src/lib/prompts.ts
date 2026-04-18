@@ -296,12 +296,47 @@ A.3 PROPORTIONAL FIDELITY
 
 A.4 FEATURE INVENTORY
    • All holes: correct diameter ratio and spatial position relative to the part.
-   • All slots, notches, cutouts: correct width/length/depth relationships.
+   • All slots, notches, cutouts: correct width/length/depth relationships
+     AND correct SHAPE — a semi-circular notch must remain semi-circular (NOT rectangular or oval);
+     a rectangular slot must remain rectangular (NOT circular or irregular).
+     ✗ FAILURE: substituting a semi-circular notch with a rectangular cutout.
+     ✗ FAILURE: substituting a rectangular slot with a round hole.
    • All threads: same pitch and thread form visible on the same fasteners.
    • All teeth, splines, keyways: identical count and profile.
    • All bends, tabs, flanges: identical angle and 3D geometry.
 
-A.5 NO SHAPE MORPHING
+A.5 CROSS-SECTION TOPOLOGY LOCK — THE MOST CRITICAL RULE
+   The fundamental 3D cross-section profile of every component is FROZEN.
+   Read the reference carefully and identify the exact cross-section before
+   rendering. Then LOCK IT. Any change to the cross-section is a TOPOLOGY
+   VIOLATION that will cause automatic rejection.
+
+   CROSS-SECTION LOCK RULES:
+   • If the reference shows a FLAT PLATE: output MUST be a flat plate.
+     ✗ FAILURE: rendering it with a raised arch or dome.
+     ✗ FAILURE: rendering it as a channel with walls.
+   • If the reference shows a U-CHANNEL (open, walls face outward, NO return lips):
+     output MUST be a U-channel — NOT a C-channel.
+     ✗ FAILURE: adding inward-facing return lips that close the channel top.
+     ✗ FAILURE: adding a flat base under the arch that wasn't in the reference.
+   • If the reference shows an L-BRACKET: output MUST be an L-bracket.
+     ✗ FAILURE: adding a second flange to make it a U or Z.
+   • If the reference shows an OPEN part (clip, bracket, stamped plate):
+     output MUST remain OPEN — do NOT close it into a ring or tube.
+     ✗ FAILURE: connecting the ends of an open clip into a loop.
+   • If the reference shows a part with a LOW, SHALLOW raised bridge:
+     output MUST have a LOW, SHALLOW bridge — not a high semi-circular arch.
+     ✗ FAILURE: exaggerating the bridge height from subtle to dramatic.
+
+   SELF-CHECK — before finalising the render:
+   1. State the cross-section profile of your output: "flat plate / U-channel / L-bracket / …"
+   2. State the cross-section profile of the reference.
+   3. They MUST match exactly.
+   4. State whether the part is open or closed. This must also match.
+   5. Count return lips, raised bridges, flanges. All counts must match.
+   If ANY mismatch: STOP. Do not finalise. Re-render with the correct cross-section.
+
+A.6 NO SHAPE MORPHING
 ${ANTI_MORPHING_DIRECTIVE}
 `;
 
@@ -330,6 +365,18 @@ B.1 CAMERA / POINT-OF-VIEW TRANSFORMATION ⬅ REQUIRED
    • Constraint: the part must still be fully visible; do not crop critical features.
    • When unseen surfaces are exposed by rotation: render them as clean, flat,
      logically consistent geometry — do NOT invent complex mechanisms.
+
+   ⚠️  FLAT / PLANAR / STAMPED PARTS — CAMERA ROTATION SAFETY RULE:
+   If the part is a FLAT PLATE, SHALLOW-ARCH PLATE, THIN STAMPED BRACKET, or
+   any part where the dominant form is planar (thickness ≤ ~15% of its width):
+   • SAFE transformation: yaw (rotate around the vertical axis, ≤ 25°) combined
+     with a new lighting setup and material quality improvement.
+   • UNSAFE: applying pitch or roll that exposes an ambiguous cut-face —
+     because the model will INVENT geometry to fill that face, causing topology
+     violations (adding walls, arches, flanges that don't exist).
+   • When in doubt for flat parts: choose a yaw rotation + better lighting.
+     A clear in-plane rotation is MORE distinct than a pitch rotation that
+     accidentally morphs the part's cross-section.
 
 B.2 LIGHTING TRANSFORMATION ⬅ REQUIRED
    • Apply a new professional three-point studio lighting setup:
@@ -490,6 +537,7 @@ return a structured JSON object that fully characterises the physical part.
 This analysis will be used to:
 1. Guide AI image generation (the generator needs to know EXACTLY what to preserve).
 2. Verify the generated output against the original.
+3. LOCK the cross-section topology so the generator cannot morph the part's fundamental form.
 
 Return a single JSON object matching this schema exactly:
 
@@ -517,10 +565,29 @@ Return a single JSON object matching this schema exactly:
       "description": "<what was detected>",
       "mustNeutralise": <true | false>
     }
-  ]
+  ],
+  "topologyLock": {
+    "isClosed": "<boolean: true if the part forms a complete closed loop/ring (e.g. washer, snap-ring), false if open (e.g. channel, clip, bracket, stamped plate)>",
+    "crossSectionProfile": "<string: exact cross-section at the most representative cut-plane — use terms like: flat plate, U-channel, L-bracket, C-channel, I-beam, hollow cylinder, solid cylinder, T-section, Z-section, shallow-arch plate, angle bracket>",
+    "bendCount": "<integer: total number of discrete sharp bends/folds visible in the part; 0 for flat plates>",
+    "flangeCount": "<integer: number of distinct flat extending lips/tabs/flanges>",
+    "returnLipCount": "<integer: number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>",
+    "raisedBridgeCount": "<integer: number of dome-shaped raised bridges; 0 means the part is planar/flat>",
+    "bridgeHeightRatioPercent": "<integer 0–100: height of the tallest raised bridge expressed as a percentage of the total part width. 0 if raisedBridgeCount is 0. Example: a 2mm-high bridge on a 25mm-wide part = 8. A shallow bridge is typically 5–15%. A tall semi-circular arch would be 40–50%.>",
+    "topologySummary": "<string: 1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
+  }
 }
 
-INSTRUCTIONS:
+TOPOLOGY CAPTURE INSTRUCTIONS (critical — errors here cause image hallucinations):
+- isClosed: A washer or snap-ring is closed (true). A clip, U-channel, bracket, or stamped plate is open (false).
+- crossSectionProfile: Look at the part edge-on. Is it flat? L-shaped? U-shaped? C-shaped (U + inward lips)?
+- bendCount: Count every 90°-type fold. A flat plate has 0. An L-bracket has 1. A U-channel has 2.
+- returnLipCount: A U-channel has 0 (walls go straight out). A C-channel has 2 (walls fold back inward at the top).
+- raisedBridgeCount: Look for dome/arch features. A flat plate has 0. A part with one central dome has 1.
+- bridgeHeightRatioPercent: Measure the bridge's HEIGHT relative to the part's total WIDTH. A very shallow bridge (2mm on a 25mm part) = ~8%. A prominent arch (15mm on a 25mm part) = ~60%. If raisedBridgeCount is 0, set this to 0. This value is used as an explicit upper bound during generation — be accurate.
+- topologySummary: Be explicit. State "open" or "closed", state "no return lips", state "planar" if flat. If a bridge exists, state "shallow bridge (~N% height ratio)".
+
+GENERAL INSTRUCTIONS:
 - Be exhaustive in the inventory — list every visible component however small.
 - If you detect no compliance flags, return an empty array for complianceFlags.
 - Return ONLY the JSON object. No markdown, no commentary, no code fences.
@@ -584,6 +651,22 @@ SCORING GUIDANCE:
     0.7 = slight expected distortion due to perspective change (<10% drift)
     0.4 = noticeable scaling difference in key features
     0.0 = proportions unrecognisable
+
+    ⚠️  TOPOLOGY AND MORPHING OVERRIDE — MANDATORY:
+    If you include a "topology_change" failure reason: dimensionalFidelityScore
+    MUST be 0.00–0.15. A part with the wrong cross-section (U→C, flat→arch,
+    open→closed) has near-zero dimensional fidelity regardless of other features.
+    If you include a "morphing" failure reason: dimensionalFidelityScore
+    MUST be 0.00–0.15. A part with the wrong number of coils/loops/bends/bridges
+    is fundamentally wrong.
+    Do NOT score these cases at 0.4 or higher. 0.15 is the hard ceiling
+    and is enforced programmatically — any higher value will be capped to 0.15.
+
+    BRIDGE HEIGHT OVERRIDE:
+    If a raised bridge in the generated image is more than 2× taller than in the
+    reference (e.g., reference has a shallow ~8% height-ratio bridge but output
+    has a dramatic 40%+ arch), add a "morphing" failure reason AND set
+    dimensionalFidelityScore ≤ 0.20.
 
   noveltyScore (creative mode gate):
     1.0 = completely different photograph (dramatic angle + lighting change)
@@ -660,11 +743,22 @@ export function buildTargetedRetryDirective(
         break;
       case 'topology_change':
         sections.push(`❌ TOPOLOGY CHANGE — ${reason.details ?? ''}`);
-        sections.push('   Fix: Restore the original assembly structure. Do not move components to new positions.');
+        sections.push('   Fix: Restore the EXACT cross-section profile from the reference.');
+        sections.push('   COMMON MISTAKES TO AVOID:');
+        sections.push('   • Do NOT add inward return lips to a plain U-channel — that turns it into a C-channel (WRONG).');
+        sections.push('   • Do NOT add a continuous flat base under an arch — that closes an open part (WRONG).');
+        sections.push('   • Do NOT add extra flanges or walls that are not in the reference (WRONG).');
+        sections.push('   • Re-examine the reference cross-section. State it explicitly before re-rendering.');
+        sections.push('   MANDATORY SELF-CHECK before finalising: state the cross-section of your output AND the reference. They must match.');
         break;
       case 'morphing':
         sections.push(`❌ SHAPE MORPHING — ${reason.details ?? ''}`);
         sections.push('   Fix: Restore the original part form. Count the loops/bends/coils and match exactly.');
+        sections.push('   COMMON MISTAKES TO AVOID:');
+        sections.push('   • Do NOT exaggerate a shallow raised bridge into a tall semi-circular arch (WRONG).');
+        sections.push('   • Do NOT turn a flat or low-profile feature into a prominent 3D structure (WRONG).');
+        sections.push('   • A shallow bridge must remain shallow — if the original bridge height is ~5–10% of the part width, keep it at that.');
+        sections.push('   MANDATORY SELF-CHECK: measure the relative bridge/arch height in your output vs the reference. Must match within ±15%.');
         break;
       default:
         sections.push(`❌ ${reason.type}: ${reason.details ?? ''}`);
