@@ -9,7 +9,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AppError, ErrorCode } from "../types";
 import { geometryValidator, buildGeometryProfile, DetectedComponent, ValidationResult } from "./geometryValidator";
-import { VerificationResult } from "./creativeModeConfig";
 
 // ============================================================================
 // VALIDATION RESULT TYPES
@@ -93,56 +92,6 @@ export class ValidatedImageProcessor {
 
     this.results.set(itemId, result);
     return result;
-  }
-
-  /**
-   * Attach an AI verification result (from verifyRegeneration) to a tracked item
-   * and produce the CreativeValidationReport shown in the UI.
-   */
-  attachVerificationResult(
-    itemId: string,
-    verResult: VerificationResult
-  ): CreativeValidationReport {
-    const existing = this.results.get(itemId);
-
-    const failureSummary: string[] = verResult.failureReasons.map(r => {
-      switch (r.type) {
-        case 'inventory_mismatch':
-          return [
-            r.missing?.length ? `Missing: ${r.missing.join(', ')}` : '',
-            r.extra?.length ? `Extra: ${r.extra.join(', ')}` : '',
-          ].filter(Boolean).join(' | ');
-        case 'insufficient_novelty':
-          return `Insufficient transformation (${((r.currentScore ?? 0) * 100).toFixed(0)}% < ${((r.requiredScore ?? 0.30) * 100).toFixed(0)}% required)`;
-        case 'dimensional_drift':
-          return `Dimensional drift on: ${r.affectedFeatures?.join(', ')}`;
-        case 'compliance_violation':
-          return `IP violation: ${r.violations?.join('; ')}`;
-        case 'topology_change':
-        case 'morphing':
-          return r.details ?? r.type;
-        default:
-          return (r as { type: string }).type;
-      }
-    });
-
-    const report: CreativeValidationReport = {
-      overallScore: verResult.overallScore,
-      inventoryMatchScore: verResult.inventoryMatchScore,
-      dimensionalFidelityScore: verResult.dimensionalFidelityScore,
-      noveltyScore: verResult.noveltyScore,
-      compliancePassed: verResult.compliancePassed,
-      passed: verResult.passed,
-      failureSummary,
-      warnings: verResult.warnings,
-    };
-
-    if (existing) {
-      existing.creativeValidationReport = report;
-      this.results.set(itemId, existing);
-    }
-
-    return report;
   }
 
   /**

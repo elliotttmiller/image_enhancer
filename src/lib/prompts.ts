@@ -219,15 +219,55 @@ the validation layer will REJECT it automatically.
 `;
 
 /**
- * Enhanced prompts specifically for ImageRegenerator batch processing
+ * Clone mode — self-contained intelligent reproduction prompt.
+ * Built-in self-analysis chain-of-thought replaces external pre-analysis call.
  */
 export const IMAGEREGENERATOR_CLONE_PROMPT = `
-You are a precision 3D rendering engine specializing in technical parts and assemblies.
+You are a precision 3D rendering engine specialising in exact technical reproduction
+of industrial parts, assemblies, and mechanical components.
 
 🎯 PRIMARY OBJECTIVE: EXACT 1:1 REPRODUCTION
-Your goal is NOT creative enhancement. Your goal is FAITHFUL REPRODUCTION.
-The output must be visually identical to the input in every meaningful way.
-You are a 1:1 clone generator — precision and accuracy trump aesthetics.
+Your goal is FAITHFUL REPRODUCTION, not creative transformation.
+The output must be photorealistic and visually identical to the input in every
+meaningful way — same viewpoint, same lighting, same material finishes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 1 — SELF-ANALYSIS  (execute internally before generating a single pixel)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A) PART INVENTORY
+   • Scan the image using a mental 4×4 grid overlay.
+   • List every discrete component: fasteners, structural members, seals,
+     moving parts, sub-assemblies, surface features.
+   • Record name, count, category, and key physical traits for each.
+   • LOCKED — your output must contain EXACTLY these components.
+
+B) TOPOLOGY LOCK
+   For every major component, determine and lock:
+   1. Is the part OPEN or CLOSED?
+   2. Cross-section profile viewed edge-on (flat plate / U-channel / L-bracket / etc.).
+   3. Count discrete bends/folds.
+   4. Count inward-facing return lips (U-channel = 0; C-channel = 2).
+   5. Presence and height of any raised bridges (0 = flat/planar).
+   These values CANNOT change in your output.
+
+C) GEOMETRY
+   • Measure the primary assembly bounding box aspect ratio.
+   • Record proportional sizes of all components relative to the assembly.
+   • Identify all symmetry axes (vertical, horizontal, rotational).
+   • All ratios and symmetry MUST be replicated within ±2%.
+
+D) MATERIALS & FINISHES
+   • Record material type, colour, and surface finish per component.
+   • Replicate these exactly in the output.
+
+E) ORIENTATION & VIEWPOINT
+   • Record the exact camera angle, elevation, and perspective.
+   • Your output MUST reproduce the SAME viewpoint — do NOT rotate the camera.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 2 — REPRODUCTION DIRECTIVES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ANTI_MORPHING_DIRECTIVE}
 
@@ -237,19 +277,21 @@ ${GEOMETRY_ANCHORING_DIRECTIVE}
 
 ${STRUCTURE_INTEGRITY_DIRECTIVE}
 
-FINAL CHECKLIST BEFORE OUTPUT:
-☐ Part count matches reference (±15% maximum)
-☐ All fasteners present and correctly spaced
-☐ Geometry measurements match original (aspect ratio within 2%)
-☐ Symmetry preserved or asymmetry maintained as in reference
-☐ All visible details replicated (threads, teeth, holes, patterns)
-☐ Assembly topology unchanged
-☐ No components added or removed
-☐ Orientation correct (upright, centered)
-☐ NO SHAPE MORPHING: Form/topology identical to reference (same # of coils/loops/bends)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FINAL SELF-CHECK — verify mentally before finalising the render
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ☐ Part count matches my Phase 1 inventory exactly
+  ☐ All fasteners present and correctly spaced
+  ☐ Aspect ratio matches original (within 2%)
+  ☐ Symmetry and asymmetry replicated exactly
+  ☐ All visible details replicated (threads, teeth, holes, patterns)
+  ☐ Assembly topology unchanged
+  ☐ Cross-section profile, open/closed status, bend/lip/bridge counts unchanged
+  ☐ No components added or removed
+  ☐ Same orientation and viewpoint as original
+  ☐ NO SHAPE MORPHING — form/topology identical to reference
 
-⚠️ CRITICAL: If you cannot guarantee these checkpoints, STOP and do not render.
-The validation layer will reject outputs with significant deviations.
+If you cannot guarantee every checkpoint above, correct your render before finalising.
 `;
 
 // ============================================================================
@@ -464,23 +506,74 @@ D.6 TONE: Neutral to slightly warm. Avoid oversaturation. No HDR tonemapping art
 
 // ============================================================================
 // COMPOSITE CREATIVE PROMPT
-// Assembles the four contracts into a single, contradiction-free directive.
+// Self-contained intelligent generation: built-in analysis chain-of-thought
+// followed by the four generation contracts.
 // ============================================================================
 
 export const IMAGEREGENERATOR_CREATIVE_PROMPT = `
 You are a Principal 3D Rendering Engineer and Industrial Product Photographer
-specialising in commercial e-commerce catalogue imagery for mechanical parts.
+specialising in commercial e-commerce catalogue imagery for mechanical parts and assemblies.
 
-🎯 MISSION: Produce a NEW, ORIGINAL studio photograph of the same physical part.
+🎯 MISSION: Produce a NEW, ORIGINAL, professional studio photograph of the same physical part.
    The output must be legally and visually distinct from the input, while
    remaining 100% faithful to the part's physical identity.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO READ THESE CONTRACTS:
+PHASE 1 — SELF-ANALYSIS  (execute internally before generating a single pixel)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before generating, perform this structured analysis of the input image.
+Every answer locks a constraint that CANNOT change in your output.
+
+A) PART INVENTORY
+   • Scan the image using a mental 4×4 grid overlay.
+   • List every discrete component: fasteners, structural members, seals,
+     moving parts, sub-assemblies, surface features (grooves, keyways, threads).
+   • Record name, count, category, and key physical traits for each.
+   • LOCKED — your output must contain EXACTLY these components.
+     Adding or omitting any component is a hard failure.
+
+B) TOPOLOGY LOCK — the most critical analysis step
+   For every major component, answer:
+   1. Is the part OPEN (clip, bracket, channel) or CLOSED (ring, washer, tube)?
+   2. What is the cross-section profile viewed edge-on?
+      (flat plate / U-channel / L-bracket / C-channel / I-beam / hollow cylinder /
+       solid cylinder / T-section / Z-section / shallow-arch plate / angle bracket)
+   3. Count discrete sharp bends/folds (a flat plate = 0; an L-bracket = 1; U-channel = 2).
+   4. Count inward-facing return lips (a U-channel has 0; a C-channel has 2).
+   5. Are there raised bridges or dome arches? If yes, estimate their height as a
+      percentage of the total part width. A shallow 2 mm bridge on a 25 mm part ≈ 8%.
+   These values are FROZEN — any deviation in the output is a topology violation.
+
+C) MATERIALS & FINISHES
+   • Identify the material and finish of each component.
+   • Record: material type, colour family, surface finish (brushed, anodised, painted, etc.).
+   • PRESERVE these exactly — do not switch material class or colour family.
+
+D) DISTINCTIVE FEATURES
+   • Note the 3–5 most recognisable physical characteristics.
+   • These are your accuracy anchors. Verify each is present in your output.
+
+E) COMPLIANCE FLAGS
+   • Identify any brand names, logos, serial numbers, or proprietary markings.
+   • Every flagged element MUST be removed or neutralised in your output.
+
+F) RENDERING PLAN (creative transformation — decide before you render)
+   • Camera angle: choose a specific rotation 15–35° from the original viewpoint
+     (e.g. "yaw 20° left + 5° upward tilt"). Commit to it.
+   • Lighting: plan a 3-point studio setup — key light position, fill ratio, rim light.
+   • Surface upgrade: decide how to elevate the material quality
+     (e.g. "add micro-scratch brushed texture with sharp Fresnel highlights").
+   ⚠️ FLAT/PLANAR PARTS — if the part is a flat plate or thin stamped bracket (thickness
+      ≤ 15% of width), restrict rotation to a YAW ≤ 25° only. Pitch rotations on flat
+      parts cause the model to invent geometry on the cut face (topology violation).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 2 — GENERATION CONTRACTS
   CONTRACT A defines the part's physical identity — these properties are FROZEN.
   CONTRACT B defines the render's photographic conditions — these MUST change.
-  CONTRACT C defines IP/copyright constraints — violations cause REJECTION.
-  CONTRACT D defines final output requirements — these are non-negotiable.
+  CONTRACT C defines IP/copyright constraints — violations are hard failures.
+  CONTRACT D defines final output requirements — non-negotiable.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${IDENTITY_PRESERVATION_CONTRACT}
@@ -492,282 +585,35 @@ ${COMPLIANCE_GUARDRAIL}
 ${OUTPUT_SPEC_CONTRACT}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXECUTION CHECKLIST — verify before finalising
+FINAL SELF-CHECK — verify mentally before finalising the render
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTRACT A (identity preserved)
-  ☐ Part inventory count: identical to reference
+IDENTITY (Contract A)
+  ☐ Part inventory count: identical to my Phase 1 analysis
   ☐ No components added or removed
+  ☐ Cross-section profile matches my Phase 1 topology lock
+  ☐ Open/closed status unchanged
+  ☐ Return lip count and raised bridge count unchanged
   ☐ All topological relationships preserved in 3D
   ☐ Proportional ratios within ±5%
   ☐ Feature inventory complete (holes, threads, teeth, bends)
   ☐ No shape morphing (coil/loop/bend count identical)
 
-CONTRACT B (transformations applied)
+TRANSFORMATION (Contract B)
   ☐ Camera angle visibly different from original (≥15° rotation/tilt)
-  ☐ Lighting is professional 3-point studio — differs from original
-  ☐ Surface material quality elevated (not just sharpened original)
+  ☐ Lighting is professional 3-point studio — clearly differs from original
+  ☐ Surface material quality elevated (not merely sharpened original)
   ☐ Output looks like a NEW photograph, not an upscale of the original
 
-CONTRACT C (compliance clean)
+COMPLIANCE (Contract C)
   ☐ No brand names, logos, or wordmarks visible
   ☐ No serial numbers, batch codes, or proprietary part numbers
   ☐ No watermarks or copyright notices
 
-CONTRACT D (output spec)
+OUTPUT SPEC (Contract D)
   ☐ Pure white background
   ☐ Part fully visible, fills 65–80% of frame
-  ☐ Single clean product image with no overlays
+  ☐ Single clean product image with no text overlays
 
-⚠️ If any A-checklist item cannot be satisfied: STOP — do not render.
-⚠️ If any B-checklist item was skipped: STOP — do not render. Upscaling is failure.
-⚠️ If any C-checklist item is violated: STOP — output will be automatically rejected.
+If ANY identity or compliance item cannot be satisfied: do NOT finalise — correct first.
+If ANY transformation item is missing: do NOT finalise — upscaling alone is not acceptable.
 `;
-
-// ============================================================================
-// PRE-GENERATION ANALYSIS PROMPT
-// Sent to a vision model BEFORE generation to produce a PartDescriptor.
-// This descriptor is injected into the generation prompt for context-aware
-// rendering and is also used as the baseline for post-generation verification.
-// ============================================================================
-
-export const PART_ANALYSIS_PROMPT = `
-You are an expert industrial analyst. Analyse the attached product image and
-return a structured JSON object that fully characterises the physical part.
-
-This analysis will be used to:
-1. Guide AI image generation (the generator needs to know EXACTLY what to preserve).
-2. Verify the generated output against the original.
-3. LOCK the cross-section topology so the generator cannot morph the part's fundamental form.
-
-Return a single JSON object matching this schema exactly:
-
-{
-  "assemblyDescription": "<concise description of what the part/assembly is>",
-  "viewType": "<orthographic | isometric | perspective | unknown>",
-  "inventory": [
-    {
-      "name": "<component name>",
-      "count": <integer>,
-      "category": "<fastener | structural | mechanical | seal | electrical | other>",
-      "shortDescription": "<key physical traits in ≤15 words>"
-    }
-  ],
-  "keyDimensions": [
-    { "feature": "<name of feature>", "relativeSize": "<size relative to overall part, e.g. '~10% of total length'>" }
-  ],
-  "materials": [
-    { "component": "<component name>", "material": "<material>", "finish": "<finish description>" }
-  ],
-  "distinctiveFeatures": ["<feature 1>", "<feature 2>"],
-  "complianceFlags": [
-    {
-      "type": "<logo | brand_name | serial_number | watermark | text_overlay>",
-      "description": "<what was detected>",
-      "mustNeutralise": <true | false>
-    }
-  ],
-  "topologyLock": {
-    "isClosed": "<boolean: true if the part forms a complete closed loop/ring (e.g. washer, snap-ring), false if open (e.g. channel, clip, bracket, stamped plate)>",
-    "crossSectionProfile": "<string: exact cross-section at the most representative cut-plane — use terms like: flat plate, U-channel, L-bracket, C-channel, I-beam, hollow cylinder, solid cylinder, T-section, Z-section, shallow-arch plate, angle bracket>",
-    "bendCount": "<integer: total number of discrete sharp bends/folds visible in the part; 0 for flat plates>",
-    "flangeCount": "<integer: number of distinct flat extending lips/tabs/flanges>",
-    "returnLipCount": "<integer: number of inward-facing return lips that fold back toward the centre; 0 for a plain U-channel, 1+ for a C-channel>",
-    "raisedBridgeCount": "<integer: number of dome-shaped raised bridges; 0 means the part is planar/flat>",
-    "bridgeHeightRatioPercent": "<integer 0–100: height of the tallest raised bridge expressed as a percentage of the total part width. 0 if raisedBridgeCount is 0. Example: a 2mm-high bridge on a 25mm-wide part = 8. A shallow bridge is typically 5–15%. A tall semi-circular arch would be 40–50%.>",
-    "topologySummary": "<string: 1–2 sentence plain-English description of the 3D form, e.g. 'A flat stamped steel plate with two oval mounting holes and a very shallow low-profile raised bridge along the centreline. The part is open (not a closed ring) with no return lips or inward-facing flanges.'>"
-  }
-}
-
-TOPOLOGY CAPTURE INSTRUCTIONS (critical — errors here cause image hallucinations):
-- isClosed: A washer or snap-ring is closed (true). A clip, U-channel, bracket, or stamped plate is open (false).
-- crossSectionProfile: Look at the part edge-on. Is it flat? L-shaped? U-shaped? C-shaped (U + inward lips)?
-- bendCount: Count every 90°-type fold. A flat plate has 0. An L-bracket has 1. A U-channel has 2.
-- returnLipCount: A U-channel has 0 (walls go straight out). A C-channel has 2 (walls fold back inward at the top).
-- raisedBridgeCount: Look for dome/arch features. A flat plate has 0. A part with one central dome has 1.
-- bridgeHeightRatioPercent: Measure the bridge's HEIGHT relative to the part's total WIDTH. A very shallow bridge (2mm on a 25mm part) = ~8%. A prominent arch (15mm on a 25mm part) = ~60%. If raisedBridgeCount is 0, set this to 0. This value is used as an explicit upper bound during generation — be accurate.
-- topologySummary: Be explicit. State "open" or "closed", state "no return lips", state "planar" if flat. If a bridge exists, state "shallow bridge (~N% height ratio)".
-
-GENERAL INSTRUCTIONS:
-- Be exhaustive in the inventory — list every visible component however small.
-- If you detect no compliance flags, return an empty array for complianceFlags.
-- Return ONLY the JSON object. No markdown, no commentary, no code fences.
-`;
-
-// ============================================================================
-// POST-GENERATION VERIFICATION PROMPT
-// Sent to a vision model with BOTH the original and generated images.
-// Returns a VerificationResult-shaped JSON that gates acceptance/retry.
-// ============================================================================
-
-export const GENERATION_VERIFICATION_PROMPT = `
-You are a strict quality-control engineer reviewing an AI-generated product image
-against its reference original.
-
-You will receive:
-  IMAGE 1: The ORIGINAL source image.
-  IMAGE 2: The GENERATED output image.
-
-Also provided below is the original part's pre-analysis descriptor (JSON).
-
-Your job is to produce a structured quality report. Return a single JSON object:
-
-{
-  "inventoryMatchScore": <0.0–1.0>,
-  "dimensionalFidelityScore": <0.0–1.0>,
-  "noveltyScore": <0.0–1.0>,
-  "compliancePassed": <true | false>,
-  "failureReasons": [
-    // Include one entry per issue found. Omit if no issues.
-    // Types: "inventory_mismatch", "insufficient_novelty", "dimensional_drift",
-    //        "compliance_violation", "topology_change", "morphing"
-    {
-      "type": "<type>",
-      // For inventory_mismatch:
-      "missing": ["<part>"],   // parts present in original but absent in output
-      "extra": ["<part>"],     // parts in output not present in original
-      // For insufficient_novelty:
-      "currentScore": <0.0–1.0>,
-      "requiredScore": 0.30,
-      // For dimensional_drift:
-      "affectedFeatures": ["<feature>"],
-      // For compliance_violation:
-      "violations": ["<description>"],
-      // For topology_change or morphing:
-      "details": "<description>"
-    }
-  ],
-  "warnings": ["<non-blocking observations>"]
-}
-
-SCORING GUIDANCE:
-  inventoryMatchScore:
-    1.0 = every part accounted for, counts exact
-    0.8 = minor uncertainty (1 small part unclear due to angle change)
-    0.5 = clearly missing or extra major component
-    0.0 = completely different assembly
-
-  dimensionalFidelityScore:
-    1.0 = all proportions identical
-    0.7 = slight expected distortion due to perspective change (<10% drift)
-    0.4 = noticeable scaling difference in key features
-    0.0 = proportions unrecognisable
-
-    ⚠️  TOPOLOGY AND MORPHING OVERRIDE — MANDATORY:
-    If you include a "topology_change" failure reason: dimensionalFidelityScore
-    MUST be 0.00–0.15. A part with the wrong cross-section (U→C, flat→arch,
-    open→closed) has near-zero dimensional fidelity regardless of other features.
-    If you include a "morphing" failure reason: dimensionalFidelityScore
-    MUST be 0.00–0.15. A part with the wrong number of coils/loops/bends/bridges
-    is fundamentally wrong.
-    Do NOT score these cases at 0.4 or higher. 0.15 is the hard ceiling
-    and is enforced programmatically — any higher value will be capped to 0.15.
-
-    BRIDGE HEIGHT OVERRIDE:
-    If a raised bridge in the generated image is more than 2× taller than in the
-    reference (e.g., reference has a shallow ~8% height-ratio bridge but output
-    has a dramatic 40%+ arch), add a "morphing" failure reason AND set
-    dimensionalFidelityScore ≤ 0.20.
-
-  noveltyScore (creative mode gate):
-    1.0 = completely different photograph (dramatic angle + lighting change)
-    0.5 = moderate transformation (clear angle shift, improved lighting)
-    0.3 = minimal but acceptable change (small tilt, better lighting)
-    0.0 = identical to original or simple upscale
-
-  compliancePassed:
-    true  = no logos, brand names, serials, watermarks visible in output
-    false = any prohibited element is present
-
-INSTRUCTIONS:
-- Be adversarial — assume the output has errors and find them.
-- Accept mild perspective-induced dimensional changes as valid (camera moved = 2D outline changed).
-- Return ONLY the JSON object. No markdown, no commentary, no code fences.
-`;
-
-// ============================================================================
-// TARGETED RETRY PROMPT BUILDER
-// Constructs a failure-specific corrective directive injected as a prefix
-// on the next generation attempt so the model understands why it's retrying.
-// ============================================================================
-
-export function buildTargetedRetryDirective(
-  failureReasons: Array<{
-    type: string;
-    missing?: string[];
-    extra?: string[];
-    currentScore?: number;
-    requiredScore?: number;
-    affectedFeatures?: string[];
-    violations?: string[];
-    details?: string;
-  }>
-): string {
-  if (!failureReasons || failureReasons.length === 0) return '';
-
-  const sections: string[] = [
-    '🔄 TARGETED RETRY DIRECTIVE — Your previous attempt failed validation.',
-    'Read each failure reason carefully and correct ONLY the flagged issue(s).',
-    '',
-  ];
-
-  for (const reason of failureReasons) {
-    switch (reason.type) {
-      case 'inventory_mismatch': {
-        const missing = reason.missing?.length ? `\n   MISSING: ${reason.missing.join(', ')}` : '';
-        const extra = reason.extra?.length ? `\n   HALLUCINATED: ${reason.extra.join(', ')}` : '';
-        sections.push(`❌ INVENTORY MISMATCH${missing}${extra}`);
-        sections.push('   Fix: Include every listed MISSING part. Remove every HALLUCINATED part.');
-        break;
-      }
-      case 'insufficient_novelty':
-        sections.push(
-          `❌ INSUFFICIENT TRANSFORMATION (score ${((reason.currentScore ?? 0) * 100).toFixed(0)}% < required ${((reason.requiredScore ?? 0.30) * 100).toFixed(0)}%)`
-        );
-        sections.push('   Fix: Apply a MORE DRAMATIC camera rotation (rotate the object 25–40°).');
-        sections.push('   Fix: Apply a COMPLETELY DIFFERENT lighting setup (reposition key light).');
-        sections.push('   The output MUST look like a brand-new photograph, not the original.');
-        break;
-      case 'dimensional_drift':
-        sections.push(
-          `❌ DIMENSIONAL DRIFT on: ${reason.affectedFeatures?.join(', ') ?? 'unspecified features'}`
-        );
-        sections.push('   Fix: Re-check the proportional relationships of these features against the reference.');
-        sections.push('   Perspective changes are expected — but the 3D volumetric proportions must be preserved.');
-        break;
-      case 'compliance_violation':
-        sections.push(
-          `❌ COMPLIANCE VIOLATION — prohibited elements detected: ${reason.violations?.join('; ') ?? 'unspecified'}`
-        );
-        sections.push('   Fix: Remove ALL brand names, logos, serials, watermarks from the output surface.');
-        sections.push('   Replace brand-embossed areas with the same clean material surface (no text).');
-        break;
-      case 'topology_change':
-        sections.push(`❌ TOPOLOGY CHANGE — ${reason.details ?? ''}`);
-        sections.push('   Fix: Restore the EXACT cross-section profile from the reference.');
-        sections.push('   COMMON MISTAKES TO AVOID:');
-        sections.push('   • Do NOT add inward return lips to a plain U-channel — that turns it into a C-channel (WRONG).');
-        sections.push('   • Do NOT add a continuous flat base under an arch — that closes an open part (WRONG).');
-        sections.push('   • Do NOT add extra flanges or walls that are not in the reference (WRONG).');
-        sections.push('   • Re-examine the reference cross-section. State it explicitly before re-rendering.');
-        sections.push('   MANDATORY SELF-CHECK before finalising: state the cross-section of your output AND the reference. They must match.');
-        break;
-      case 'morphing':
-        sections.push(`❌ SHAPE MORPHING — ${reason.details ?? ''}`);
-        sections.push('   Fix: Restore the original part form. Count the loops/bends/coils and match exactly.');
-        sections.push('   COMMON MISTAKES TO AVOID:');
-        sections.push('   • Do NOT exaggerate a shallow raised bridge into a tall semi-circular arch (WRONG).');
-        sections.push('   • Do NOT turn a flat or low-profile feature into a prominent 3D structure (WRONG).');
-        sections.push('   • A shallow bridge must remain shallow — if the original bridge height is ~5–10% of the part width, keep it at that.');
-        sections.push('   MANDATORY SELF-CHECK: measure the relative bridge/arch height in your output vs the reference. Must match within ±15%.');
-        break;
-      default:
-        sections.push(`❌ ${reason.type}: ${reason.details ?? ''}`);
-    }
-    sections.push('');
-  }
-
-  sections.push('Proceed with the generation, applying ONLY the corrections listed above.');
-  sections.push('All other constraints from the original prompt remain in effect.');
-
-  return sections.join('\n');
-}
