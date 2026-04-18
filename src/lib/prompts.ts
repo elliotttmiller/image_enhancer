@@ -160,6 +160,59 @@ If NO: You have hallucinated a structural change. CORRECT IT.
 `;
 
 /**
+ * ANTI-MORPHING DIRECTIVE
+ * Prevents the AI from changing the fundamental structure/topology of parts
+ * (e.g., simple wire becoming coiled spring, blade becoming wedge, etc.)
+ */
+export const ANTI_MORPHING_DIRECTIVE = `
+🚨 NO SHAPE MORPHING — TOPOLOGY LOCKED 🚨
+===========================================
+
+CRITICAL: The fundamental STRUCTURE and FORM of every part CANNOT change.
+
+MORPHING FAILURES (Output will be REJECTED):
+✗ Simple curved wire → Coiled/helical spring (adding coils that don't exist)
+✗ Rectangular blade → Tapered wedge or conical shape
+✗ Cylindrical rod → Tapered or bulging rod
+✗ Flat washer → Curved or domed washer
+✗ Straight line → Curved or wavy line
+✗ Single loop → Multiple loops/coils (adding structure)
+✗ Open U-shape → Closed spiral (changing topology)
+
+VERIFICATION CHECKLIST - DO THIS FIRST:
+1. Identify the PRIMARY FORM of each component:
+   - Is it a single curved line? (wire, hook, clip)
+   - Is it a series of loops? (count them: 1 loop, 2 loops, 3 coils?)
+   - Is it a straight element? (rod, blade, pin)
+   - Is it a hollow ring/washer?
+   - Is it an open or closed shape?
+
+2. LOCK THIS FORM:
+   - If reference shows 1 loop: output MUST have 1 loop (not 2, not 3)
+   - If reference shows single curved wire: output MUST be single wire (not coiled)
+   - If reference shows open shape: output MUST remain open (not close it)
+   - If reference shows straight: output MUST remain straight (not curve it)
+
+3. MEASURE COMPLEXITY:
+   - Count distinct curves, bends, loops in reference
+   - Your output must have IDENTICAL count and arrangement
+   - If original has 2 bends, output must have 2 bends (not 3, not 1)
+
+4. SELF-CHECK:
+   ☑ Part form category unchanged (wire→spring is FAILURE)
+   ☑ Loop/coil count identical
+   ☑ Bend count identical
+   ☑ Open/closed status unchanged
+   ☑ Overall topology matches reference exactly
+   
+   If ANY of these fail: STOP and correct immediately.
+
+FAILURE CONSEQUENCE:
+If your output has a different number of coils, loops, or bends than the reference,
+the validation layer will REJECT it automatically.
+`;
+
+/**
  * Enhanced prompts specifically for ImageRegenerator batch processing
  */
 export const IMAGEREGENERATOR_CLONE_PROMPT = `
@@ -169,6 +222,8 @@ You are a precision 3D rendering engine specializing in technical parts and asse
 Your goal is NOT creative enhancement. Your goal is FAITHFUL REPRODUCTION.
 The output must be visually identical to the input in every meaningful way.
 You are a 1:1 clone generator — precision and accuracy trump aesthetics.
+
+${ANTI_MORPHING_DIRECTIVE}
 
 ${ANTI_HALLUCINATION_INVENTORY_DIRECTIVE}
 
@@ -185,6 +240,7 @@ FINAL CHECKLIST BEFORE OUTPUT:
 ☐ Assembly topology unchanged
 ☐ No components added or removed
 ☐ Orientation correct (upright, centered)
+☐ NO SHAPE MORPHING: Form/topology identical to reference (same # of coils/loops/bends)
 
 ⚠️ CRITICAL: If you cannot guarantee these checkpoints, STOP and do not render.
 The validation layer will reject outputs with significant deviations.
@@ -199,6 +255,9 @@ The output MUST be visually DISTINCT from the input in meaningful ways—better 
 You are NOT upscaling the original. You are PROFESSIONALLY RE-RENDERING it from scratch with premium production quality.
 
 ⚠️ CRITICAL: Simply upscaling the input image is FAILURE. You MUST create meaningful enhancements.
+⚠️ CRITICAL: NO SHAPE MORPHING. The form and topology of parts CANNOT change.
+
+${ANTI_MORPHING_DIRECTIVE}
 
 ${ANTI_HALLUCINATION_INVENTORY_DIRECTIVE}
 
