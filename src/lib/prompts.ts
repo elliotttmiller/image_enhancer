@@ -44,7 +44,10 @@ CRITICAL INSTRUCTIONS FOR VALIDATION:
 
 /**
  * STRICT INVENTORY DIRECTIVE
- * Injected into regeneration prompts to prevent part hallucinations
+ * Injected into regeneration prompts to prevent part hallucinations.
+ * NOTE: Used by clone mode and as the identity-preservation section of
+ * creative mode. Does NOT include any orientation/rotation restrictions —
+ * those belong to GEOMETRY_TOPOLOGY_LOCK below.
  */
 export const ANTI_HALLUCINATION_INVENTORY_DIRECTIVE = `
 🔒 ANTI-HALLUCINATION: STRICT PART INVENTORY LOCK
@@ -78,8 +81,11 @@ FAILURE MODE — If your output has different part count ±15%:
 `;
 
 /**
- * GEOMETRY ANCHORING DIRECTIVE
- * Forces AI to preserve exact geometry and prevent distortions
+ * GEOMETRY ANCHORING DIRECTIVE (clone mode / full lock)
+ * Preserves exact proportions AND prohibits any orientation changes.
+ * Used by clone mode and by schematic-enhancement prompts.
+ * ⚠️  Do NOT inject into creative mode — creative mode intentionally
+ *     changes camera angle, which this directive would contradict.
  */
 export const GEOMETRY_ANCHORING_DIRECTIVE = `
 🔒 GEOMETRY ANCHORING — ABSOLUTE PRECISION REQUIRED
@@ -246,116 +252,428 @@ FINAL CHECKLIST BEFORE OUTPUT:
 The validation layer will reject outputs with significant deviations.
 `;
 
-export const IMAGEREGENERATOR_CREATIVE_PROMPT = `
-You are a Principal 3D Rendering Engineer specializing in technical parts and mechanical assemblies.
+// ============================================================================
+// CREATIVE MODE — MODULAR CONTRACT SYSTEM
+// Each contract is a discrete, non-overlapping directive.
+// They are composed together in IMAGEREGENERATOR_CREATIVE_PROMPT below.
+// ============================================================================
 
-🎯 PRIMARY OBJECTIVE: ENHANCED PROFESSIONAL REPRODUCTION
-Your goal is to create a DRAMATICALLY IMPROVED technical illustration of the same assembly.
-The output MUST be visually DISTINCT from the input in meaningful ways—better lighting, sharper detail, enhanced materials.
-You are NOT upscaling the original. You are PROFESSIONALLY RE-RENDERING it from scratch with premium production quality.
+/**
+ * CONTRACT A — STRUCTURAL IDENTITY LOCK
+ *
+ * Defines what CANNOT change in creative mode.
+ * Focused purely on physical part identity (what the part IS), NOT on
+ * how it is photographed/rendered (that is CONTRACT B's domain).
+ */
+export const IDENTITY_PRESERVATION_CONTRACT = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT A — STRUCTURAL IDENTITY LOCK (immutable)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-⚠️ CRITICAL: Simply upscaling the input image is FAILURE. You MUST create meaningful enhancements.
-⚠️ CRITICAL: NO SHAPE MORPHING. The form and topology of parts CANNOT change.
+The physical part in the output MUST be the same physical object as in the input.
+This contract governs the PART ITSELF, not its photographic presentation.
 
+A.1 PART INVENTORY (zero tolerance for additions or omissions)
+   • Perform a mental 4×4 grid scan of the reference image.
+   • List every discrete component: fasteners, structural members, seals,
+     moving parts, sub-assemblies, surface features (grooves, keyways, splines).
+   • Your output MUST contain EXACTLY these components — count must be identical.
+   • You CANNOT add parts that do not exist in the reference.
+   • You CANNOT omit any part visible in the reference.
+
+A.2 TOPOLOGY & SPATIAL RELATIONSHIPS
+   • Every connection: part A attached to part B → remains attached.
+   • Every containment: part C inside D → remains inside.
+   • Every adjacency: part E above F → E remains above F (after accounting
+     for any camera rotation — use the 3D volumetric relationship, not the
+     projected 2D position).
+   • Gap spacings: maintain proportional gaps within ±10%.
+
+A.3 PROPORTIONAL FIDELITY
+   • Aspect ratio of the primary assembly bounding volume: ±5% tolerance.
+   • Relative size ratios between components: ±5% tolerance.
+   • Do NOT rescale individual parts relative to one another.
+
+A.4 FEATURE INVENTORY
+   • All holes: correct diameter ratio and spatial position relative to the part.
+   • All slots, notches, cutouts: correct width/length/depth relationships.
+   • All threads: same pitch and thread form visible on the same fasteners.
+   • All teeth, splines, keyways: identical count and profile.
+   • All bends, tabs, flanges: identical angle and 3D geometry.
+
+A.5 NO SHAPE MORPHING
 ${ANTI_MORPHING_DIRECTIVE}
-
-${ANTI_HALLUCINATION_INVENTORY_DIRECTIVE}
-
-${GEOMETRY_ANCHORING_DIRECTIVE}
-
-${STRUCTURE_INTEGRITY_DIRECTIVE}
-
-MANDATORY TRANSFORMATION REQUIREMENTS (YOU MUST APPLY ALL):
-=========================================================
-
-1️⃣ CAMERA/PERSPECTIVE TRANSFORMATION (REQUIRED)
-   • You MUST change the camera angle/perspective from the original
-   • Suggested variations: rotate 15-30° left/right, tilt up/down 10-20°, shift side-to-side
-   • The output MUST look like a photograph taken from a meaningfully different viewpoint
-   • Example: If original is straight-on, regenerate at 20° perspective tilt
-   • EXCEPTION: If the part is symmetrical or already has 45° isometric view, maintain angle but apply other transformations
-
-2️⃣ LIGHTING TRANSFORMATION (REQUIRED)
-   • Original lighting: [analyze and describe]
-   • New lighting setup: Professional 3-point studio lighting
-     - Key light: 45° elevation, directional, casting defined shadows
-     - Fill light: 0.3 intensity on opposite side
-     - Rim light: Edge highlight for depth separation
-   • Result: Dramatic improvement over flat/inconsistent original lighting
-   • Shadows must reveal 3D geometry clearly
-
-3️⃣ SURFACE/MATERIAL ENHANCEMENT (REQUIRED)
-   • Analyze material in original: [metal, plastic, composite, etc.]
-   • Enhance material appearance:
-     - If metal: Add micro-scratches, brush finish texture, or polished highlights
-     - If plastic: Add subtle grain, fresnel reflection on edges
-     - If composite: Add weave pattern or texture depth
-   • Maintain the SAME material type (don't change aluminium to steel)
-   • Make surfaces look more professionally manufactured
-
-4️⃣ DETAIL CLARITY ENHANCEMENT (REQUIRED)
-   • Threads: Make visible if part has fasteners
-   • Edges: Define chamfers and radii crisply
-   • Holes/Slots: Render with proper depth perception
-   • Surface marks: Add manufacturing details (tool marks, knurl patterns)
-   • All details must be VISIBLE and CLEAR, not hidden in shadows
-
-5️⃣ BACKGROUND & PRESENTATION (REQUIRED)
-   • Pure white background (#FFFFFF) with no color cast
-   • Realistic contact shadow on ground plane (if applicable)
-   • No distracting elements, logos, or clutter
-   • Professional "product shot" aesthetic
-
-GEOMETRY PRESERVATION (LOCKED):
-================================
-While transforming view and lighting, PRESERVE these absolutely:
-• Part count: IDENTICAL (±15% max tolerance)
-• Part types & configuration: UNCHANGED
-• Dimensions & proportions: Within ±3% tolerance
-• Assembly structure & topology: IDENTICAL
-• Orientation relationships: PRESERVED (if part A is above B, maintain this)
-
-ANTI-UPSCALE ENFORCEMENT:
-=========================
-⛔ FAILURE CONDITIONS (Output will be rejected):
-  • If the output looks like simple upscaling of the input
-  • If the perspective/angle is unchanged from the original
-  • If the lighting is not dramatically improved
-  • If material details are not enhanced
-  • If the output is visually indistinguishable from the input at 2x resolution
-
-✓ SUCCESS CONDITIONS:
-  • Output looks like a NEW professional photograph of the same part
-  • Camera angle/perspective is meaningfully different
-  • Lighting reveals geometry better than original
-  • Material appearance is more refined and professional
-  • Details are crisper and more visible
-  • Still 100% recognizable as the same assembly/part
-
-ENHANCEMENT PRIORITY ORDER:
-===========================
-1. Change camera angle/perspective (MANDATORY)
-2. Apply professional lighting (MANDATORY)
-3. Enhance material/surface appearance (MANDATORY)
-4. Clarify small details and features (REQUIRED)
-5. Optimize composition and centering (REQUIRED)
-
-FINAL VERIFICATION BEFORE OUTPUT:
-=================================
-☐ Inventory count IDENTICAL to original (±15% max)
-☐ All parts present and in same positions
-☐ Camera angle/perspective CHANGED from original
-☐ Lighting is dramatically improved (not flat like original)
-☐ Material appearance enhanced (more professional finish)
-☐ Details are crisper and more visible
-☐ Output is NOT just upscaled original
-☐ Part geometry preserved (±3% on dimensions)
-☐ Pure white background with realistic shadow
-
-If you cannot satisfy these requirements, STOP and DO NOT render.
-Your output will be validated against these criteria.
-
-⚠️ FINAL CRITICAL: Your mission is to create a PROFESSIONAL STUDIO RENDER
-that is VISUALLY SUPERIOR to the original in every way while maintaining
-complete geometric fidelity. UPSCALING IS FAILURE.
 `;
+
+/**
+ * CONTRACT B — RENDERING TRANSFORMATION MANDATE
+ *
+ * Defines what MUST change in creative mode.
+ * Creative mode exists to produce a legally distinct, original rendering
+ * of the same physical part — not a pixel-copy at a higher resolution.
+ * ALL THREE transformations are mandatory.
+ */
+export const RENDERING_TRANSFORMATION_MANDATE = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT B — RENDERING TRANSFORMATION MANDATE (all three required)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You MUST apply meaningful transformations to produce an ORIGINAL image.
+Simply increasing resolution or sharpening the original is FAILURE.
+
+B.1 CAMERA / POINT-OF-VIEW TRANSFORMATION ⬅ REQUIRED
+   • Rotate or tilt the virtual camera 15–35° from the original viewpoint.
+   • The output MUST look like a photograph taken from a noticeably different
+     angle — the 2D silhouette and projected proportions will naturally differ.
+   • Acceptable variations: yaw left/right, pitch up/down, slight roll,
+     or a combination of these.
+   • Constraint: the part must still be fully visible; do not crop critical features.
+   • When unseen surfaces are exposed by rotation: render them as clean, flat,
+     logically consistent geometry — do NOT invent complex mechanisms.
+
+B.2 LIGHTING TRANSFORMATION ⬅ REQUIRED
+   • Apply a new professional three-point studio lighting setup:
+     – Key light: 45° elevation, directional, casting defined micro-shadows
+     – Fill light: 0.3 intensity, opposite side, eliminates harsh under-shadows
+     – Rim light: edge highlight separating part from background
+   • Result: shadows must visibly reveal the part's 3D surface geometry in a
+     way that differs from the original image's lighting.
+
+B.3 SURFACE / MATERIAL ENHANCEMENT ⬅ REQUIRED
+   • Elevate surface quality to a premium industrial finish:
+     – If metal: add micro-scratches, brushed or bead-blasted texture, sharp highlights
+     – If plastic: add subtle grain and fresnel edge reflection
+     – If rubber/seal: add slight gloss and compression contour shadows
+   • MAINTAIN the general material type and colour family of the original
+     (if the original is silver aluminium, keep it silver aluminium — do not change
+     to gold or switch material class).
+   • The surface should look more precisely manufactured than the source.
+
+SUCCESS CRITERIA FOR THIS CONTRACT:
+   ✓ If the original and output were placed side by side, a viewer would immediately
+     say: "Same part, different photograph."
+   ✗ FAILURE: "This looks like the original with a slight sharpness filter."
+`;
+
+/**
+ * CONTRACT C — IP / COMPLIANCE GUARDRAIL
+ *
+ * Prevents the output from reproducing copyright/trade-dress elements.
+ * Applies to all visible text, logos, serial numbers, and brand marks.
+ */
+export const COMPLIANCE_GUARDRAIL = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT C — IP / COMPLIANCE GUARDRAIL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+C.1 REMOVE OR NEUTRALISE — these elements must NOT appear in the output:
+   • Brand names, manufacturer names, product names
+   • Logos, wordmarks, trade-dress symbols (®, ™, ©)
+   • Serial numbers, batch codes, date codes
+   • Watermarks, copyright notices, licensing text
+   • Part numbers that uniquely identify a proprietary part
+
+C.2 RETAIN — these elements are NOT covered by C.1:
+   • Generic dimension markings (e.g., "M8", "1/4-20", "Ø12")
+   • Material designations that are industry standards (e.g., "316 SS")
+   • Safety-critical markings that are legally required (e.g., CE, UL marks
+     may be retained if they are essential to the part's identity)
+   • Callout numbers used for assembly reference (e.g., item numbers "1", "2")
+
+C.3 SURFACE TEXTURES THAT CARRY TEXT:
+   • If the original has embossed/stamped brand text, render that surface
+     as a clean, unadorned version of the same material.
+   • Do not replace brand text with fictitious/generic text or numbers.
+
+FAILURE CONDITION: Any visible logo, brand name, or proprietary serial
+number in the output will cause automatic rejection.
+`;
+
+/**
+ * CONTRACT D — OUTPUT SPECIFICATION
+ *
+ * Defines the final image presentation requirements.
+ */
+export const OUTPUT_SPEC_CONTRACT = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT D — OUTPUT SPECIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+D.1 BACKGROUND: Pure white (#FFFFFF), infinite/seamless, no gradients or vignettes.
+
+D.2 SHADOW: Subtle, realistic contact shadow grounding the part to the surface.
+    Shadow must not dominate the composition or exceed 15% of image area.
+
+D.3 FOCUS: Full part in sharp focus — no depth-of-field blur anywhere on the subject.
+
+D.4 COMPOSITION: Part fills 65–80% of the frame. Generous even margins on all sides.
+    Part must be fully visible — no cropping of edges or features.
+
+D.5 FORMAT: Single product photograph. One image. No text, no overlays, no annotations,
+    no collage, no comparison panel, no watermarks, no borders.
+
+D.6 TONE: Neutral to slightly warm. Avoid oversaturation. No HDR tonemapping artefacts.
+`;
+
+// ============================================================================
+// COMPOSITE CREATIVE PROMPT
+// Assembles the four contracts into a single, contradiction-free directive.
+// ============================================================================
+
+export const IMAGEREGENERATOR_CREATIVE_PROMPT = `
+You are a Principal 3D Rendering Engineer and Industrial Product Photographer
+specialising in commercial e-commerce catalogue imagery for mechanical parts.
+
+🎯 MISSION: Produce a NEW, ORIGINAL studio photograph of the same physical part.
+   The output must be legally and visually distinct from the input, while
+   remaining 100% faithful to the part's physical identity.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW TO READ THESE CONTRACTS:
+  CONTRACT A defines the part's physical identity — these properties are FROZEN.
+  CONTRACT B defines the render's photographic conditions — these MUST change.
+  CONTRACT C defines IP/copyright constraints — violations cause REJECTION.
+  CONTRACT D defines final output requirements — these are non-negotiable.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${IDENTITY_PRESERVATION_CONTRACT}
+
+${RENDERING_TRANSFORMATION_MANDATE}
+
+${COMPLIANCE_GUARDRAIL}
+
+${OUTPUT_SPEC_CONTRACT}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXECUTION CHECKLIST — verify before finalising
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT A (identity preserved)
+  ☐ Part inventory count: identical to reference
+  ☐ No components added or removed
+  ☐ All topological relationships preserved in 3D
+  ☐ Proportional ratios within ±5%
+  ☐ Feature inventory complete (holes, threads, teeth, bends)
+  ☐ No shape morphing (coil/loop/bend count identical)
+
+CONTRACT B (transformations applied)
+  ☐ Camera angle visibly different from original (≥15° rotation/tilt)
+  ☐ Lighting is professional 3-point studio — differs from original
+  ☐ Surface material quality elevated (not just sharpened original)
+  ☐ Output looks like a NEW photograph, not an upscale of the original
+
+CONTRACT C (compliance clean)
+  ☐ No brand names, logos, or wordmarks visible
+  ☐ No serial numbers, batch codes, or proprietary part numbers
+  ☐ No watermarks or copyright notices
+
+CONTRACT D (output spec)
+  ☐ Pure white background
+  ☐ Part fully visible, fills 65–80% of frame
+  ☐ Single clean product image with no overlays
+
+⚠️ If any A-checklist item cannot be satisfied: STOP — do not render.
+⚠️ If any B-checklist item was skipped: STOP — do not render. Upscaling is failure.
+⚠️ If any C-checklist item is violated: STOP — output will be automatically rejected.
+`;
+
+// ============================================================================
+// PRE-GENERATION ANALYSIS PROMPT
+// Sent to a vision model BEFORE generation to produce a PartDescriptor.
+// This descriptor is injected into the generation prompt for context-aware
+// rendering and is also used as the baseline for post-generation verification.
+// ============================================================================
+
+export const PART_ANALYSIS_PROMPT = `
+You are an expert industrial analyst. Analyse the attached product image and
+return a structured JSON object that fully characterises the physical part.
+
+This analysis will be used to:
+1. Guide AI image generation (the generator needs to know EXACTLY what to preserve).
+2. Verify the generated output against the original.
+
+Return a single JSON object matching this schema exactly:
+
+{
+  "assemblyDescription": "<concise description of what the part/assembly is>",
+  "viewType": "<orthographic | isometric | perspective | unknown>",
+  "inventory": [
+    {
+      "name": "<component name>",
+      "count": <integer>,
+      "category": "<fastener | structural | mechanical | seal | electrical | other>",
+      "shortDescription": "<key physical traits in ≤15 words>"
+    }
+  ],
+  "keyDimensions": [
+    { "feature": "<name of feature>", "relativeSize": "<size relative to overall part, e.g. '~10% of total length'>" }
+  ],
+  "materials": [
+    { "component": "<component name>", "material": "<material>", "finish": "<finish description>" }
+  ],
+  "distinctiveFeatures": ["<feature 1>", "<feature 2>"],
+  "complianceFlags": [
+    {
+      "type": "<logo | brand_name | serial_number | watermark | text_overlay>",
+      "description": "<what was detected>",
+      "mustNeutralise": <true | false>
+    }
+  ]
+}
+
+INSTRUCTIONS:
+- Be exhaustive in the inventory — list every visible component however small.
+- If you detect no compliance flags, return an empty array for complianceFlags.
+- Return ONLY the JSON object. No markdown, no commentary, no code fences.
+`;
+
+// ============================================================================
+// POST-GENERATION VERIFICATION PROMPT
+// Sent to a vision model with BOTH the original and generated images.
+// Returns a VerificationResult-shaped JSON that gates acceptance/retry.
+// ============================================================================
+
+export const GENERATION_VERIFICATION_PROMPT = `
+You are a strict quality-control engineer reviewing an AI-generated product image
+against its reference original.
+
+You will receive:
+  IMAGE 1: The ORIGINAL source image.
+  IMAGE 2: The GENERATED output image.
+
+Also provided below is the original part's pre-analysis descriptor (JSON).
+
+Your job is to produce a structured quality report. Return a single JSON object:
+
+{
+  "inventoryMatchScore": <0.0–1.0>,
+  "dimensionalFidelityScore": <0.0–1.0>,
+  "noveltyScore": <0.0–1.0>,
+  "compliancePassed": <true | false>,
+  "failureReasons": [
+    // Include one entry per issue found. Omit if no issues.
+    // Types: "inventory_mismatch", "insufficient_novelty", "dimensional_drift",
+    //        "compliance_violation", "topology_change", "morphing"
+    {
+      "type": "<type>",
+      // For inventory_mismatch:
+      "missing": ["<part>"],   // parts present in original but absent in output
+      "extra": ["<part>"],     // parts in output not present in original
+      // For insufficient_novelty:
+      "currentScore": <0.0–1.0>,
+      "requiredScore": 0.30,
+      // For dimensional_drift:
+      "affectedFeatures": ["<feature>"],
+      // For compliance_violation:
+      "violations": ["<description>"],
+      // For topology_change or morphing:
+      "details": "<description>"
+    }
+  ],
+  "warnings": ["<non-blocking observations>"]
+}
+
+SCORING GUIDANCE:
+  inventoryMatchScore:
+    1.0 = every part accounted for, counts exact
+    0.8 = minor uncertainty (1 small part unclear due to angle change)
+    0.5 = clearly missing or extra major component
+    0.0 = completely different assembly
+
+  dimensionalFidelityScore:
+    1.0 = all proportions identical
+    0.7 = slight expected distortion due to perspective change (<10% drift)
+    0.4 = noticeable scaling difference in key features
+    0.0 = proportions unrecognisable
+
+  noveltyScore (creative mode gate):
+    1.0 = completely different photograph (dramatic angle + lighting change)
+    0.5 = moderate transformation (clear angle shift, improved lighting)
+    0.3 = minimal but acceptable change (small tilt, better lighting)
+    0.0 = identical to original or simple upscale
+
+  compliancePassed:
+    true  = no logos, brand names, serials, watermarks visible in output
+    false = any prohibited element is present
+
+INSTRUCTIONS:
+- Be adversarial — assume the output has errors and find them.
+- Accept mild perspective-induced dimensional changes as valid (camera moved = 2D outline changed).
+- Return ONLY the JSON object. No markdown, no commentary, no code fences.
+`;
+
+// ============================================================================
+// TARGETED RETRY PROMPT BUILDER
+// Constructs a failure-specific corrective directive injected as a prefix
+// on the next generation attempt so the model understands why it's retrying.
+// ============================================================================
+
+export function buildTargetedRetryDirective(
+  failureReasons: Array<{
+    type: string;
+    missing?: string[];
+    extra?: string[];
+    currentScore?: number;
+    requiredScore?: number;
+    affectedFeatures?: string[];
+    violations?: string[];
+    details?: string;
+  }>
+): string {
+  if (!failureReasons || failureReasons.length === 0) return '';
+
+  const sections: string[] = [
+    '🔄 TARGETED RETRY DIRECTIVE — Your previous attempt failed validation.',
+    'Read each failure reason carefully and correct ONLY the flagged issue(s).',
+    '',
+  ];
+
+  for (const reason of failureReasons) {
+    switch (reason.type) {
+      case 'inventory_mismatch': {
+        const missing = reason.missing?.length ? `\n   MISSING: ${reason.missing.join(', ')}` : '';
+        const extra = reason.extra?.length ? `\n   HALLUCINATED: ${reason.extra.join(', ')}` : '';
+        sections.push(`❌ INVENTORY MISMATCH${missing}${extra}`);
+        sections.push('   Fix: Include every listed MISSING part. Remove every HALLUCINATED part.');
+        break;
+      }
+      case 'insufficient_novelty':
+        sections.push(
+          `❌ INSUFFICIENT TRANSFORMATION (score ${((reason.currentScore ?? 0) * 100).toFixed(0)}% < required ${((reason.requiredScore ?? 0.30) * 100).toFixed(0)}%)`
+        );
+        sections.push('   Fix: Apply a MORE DRAMATIC camera rotation (rotate the object 25–40°).');
+        sections.push('   Fix: Apply a COMPLETELY DIFFERENT lighting setup (reposition key light).');
+        sections.push('   The output MUST look like a brand-new photograph, not the original.');
+        break;
+      case 'dimensional_drift':
+        sections.push(
+          `❌ DIMENSIONAL DRIFT on: ${reason.affectedFeatures?.join(', ') ?? 'unspecified features'}`
+        );
+        sections.push('   Fix: Re-check the proportional relationships of these features against the reference.');
+        sections.push('   Perspective changes are expected — but the 3D volumetric proportions must be preserved.');
+        break;
+      case 'compliance_violation':
+        sections.push(
+          `❌ COMPLIANCE VIOLATION — prohibited elements detected: ${reason.violations?.join('; ') ?? 'unspecified'}`
+        );
+        sections.push('   Fix: Remove ALL brand names, logos, serials, watermarks from the output surface.');
+        sections.push('   Replace brand-embossed areas with the same clean material surface (no text).');
+        break;
+      case 'topology_change':
+        sections.push(`❌ TOPOLOGY CHANGE — ${reason.details ?? ''}`);
+        sections.push('   Fix: Restore the original assembly structure. Do not move components to new positions.');
+        break;
+      case 'morphing':
+        sections.push(`❌ SHAPE MORPHING — ${reason.details ?? ''}`);
+        sections.push('   Fix: Restore the original part form. Count the loops/bends/coils and match exactly.');
+        break;
+      default:
+        sections.push(`❌ ${reason.type}: ${reason.details ?? ''}`);
+    }
+    sections.push('');
+  }
+
+  sections.push('Proceed with the generation, applying ONLY the corrections listed above.');
+  sections.push('All other constraints from the original prompt remain in effect.');
+
+  return sections.join('\n');
+}

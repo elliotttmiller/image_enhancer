@@ -1,7 +1,7 @@
 // gemini.ts
-// Production Grade — v3.0
-// Elite prompt architecture, circuit-breaker resilience, precision generation
-// Enhanced with anti-hallucination validation
+// Production Grade — v4.0
+// Staged pipeline: analyze → generate → verify → targeted-retry
+// Modular prompt contracts, real validation, IP/compliance guardrails
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { SchematicExtractionSession } from "./SchematicExtractionSession";
@@ -22,7 +22,17 @@ import {
 import {
   IMAGEREGENERATOR_CLONE_PROMPT,
   IMAGEREGENERATOR_CREATIVE_PROMPT,
+  PART_ANALYSIS_PROMPT,
+  GENERATION_VERIFICATION_PROMPT,
+  buildTargetedRetryDirective,
 } from "./prompts";
+import {
+  getPolicyForMode,
+  PartDescriptor,
+  VerificationResult,
+  FailureReason,
+  CREATIVE_MODE_VERSION,
+} from "./creativeModeConfig";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1073,125 +1083,226 @@ export async function refineSchematic(
 }
 
 // ============================================================================
-// PROMPT ENGINEERING — regenerateImage
+// PRE-GENERATION ANALYSIS — analyzePartForRegeneration
+// Calls a vision model to extract a structured PartDescriptor from the
+// original image BEFORE generation so the generation prompt can be
+// enriched with concrete inventory/material/compliance context.
 // ============================================================================
 
-const BASE_PROMPT = `\
-You are a professional product photographer and 3D rendering specialist producing \
-commercial-grade studio imagery for an industrial e-commerce catalog.
+export async function analyzePartForRegeneration(
+  base64Image: string,
+  mimeType: string
+): Promise<PartDescriptor> {
+  const caller = "analyzePartForRegeneration";
+  validateApiKey(caller);
 
-The reference image shows a physical part, tool, or hardware component. \
-Your task is to produce a new, standalone product photograph — not a visual copy \
-of the original, but a freshly rendered studio image that accurately represents \
-the same physical object with improved production quality.
+  const analysisModel = "gemini-3.1-pro-preview";
 
-OUTPUT STANDARD (apply to all renders):
-• Background: pure white (#FFFFFF), infinite/seamless, no gradients or vignettes
-• Lighting: soft directional studio key light from upper-left, secondary fill light, no harsh clipping
-• Shadow: subtle, sharp-edged contact shadow grounding the object to the surface
-• Focus: full part in sharp focus — no depth-of-field blur anywhere on the subject
-• Surface fidelity: hyper-realistic material textures at 4K-grade resolution
-• Markings: reproduce only text, numbers, logos, or engravings that are unambiguously \
-visible in the source image — do not invent or add any markings
+  return withRetry(async (attempt) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    console.info(`[gemini] ${caller} — attempt ${attempt} | model=${analysisModel}`);
+
+    const response = await ai.models.generateContent({
+      model: analysisModel,
+      contents: {
+        parts: [
+          { text: PART_ANALYSIS_PROMPT },
+          { inlineData: { mimeType, data: base64Image } },
+        ],
+      },
+      config: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const text = response.text?.trim();
+    if (!text) throw new Error("No analysis text returned.");
+
+    try {
+      const parsed = JSON.parse(text) as PartDescriptor;
+      console.info(`[gemini] ${caller} — success | inventory items: ${parsed.inventory?.length ?? 0}`);
+      return parsed;
+    } catch {
+      throw new Error(`Failed to parse PartDescriptor JSON: ${text.substring(0, 200)}`);
+    }
+  }, 'text', { maxAttempts: 3, baseDelayMs: 800, maxDelayMs: 5000, backoffMultiplier: 2.0 });
+}
+
+// ============================================================================
+// POST-GENERATION VERIFICATION — verifyRegeneration
+// Sends both the original image and the generated image to a vision model
+// and asks it to score the output against the PartDescriptor and the
+// creative-mode contracts. Returns a VerificationResult with sub-scores
+// and specific failure reasons the retry system can act on.
+// ============================================================================
+
+export async function verifyRegeneration(
+  originalBase64: string,
+  originalMimeType: string,
+  generatedBase64: string,
+  generatedMimeType: string,
+  partDescriptor: PartDescriptor
+): Promise<VerificationResult> {
+  const caller = "verifyRegeneration";
+  validateApiKey(caller);
+
+  const verificationModel = "gemini-3.1-pro-preview";
+
+  const descriptorJson = JSON.stringify(partDescriptor, null, 2);
+  const verificationPromptWithDescriptor = `
+${GENERATION_VERIFICATION_PROMPT}
+
+ORIGINAL PART ANALYSIS (pre-computed descriptor):
+${descriptorJson}
 `;
 
-const CLONE_PROMPT = `\
-${BASE_PROMPT}
+  return withRetry(async (attempt) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    console.info(`[gemini] ${caller} — attempt ${attempt} | model=${verificationModel}`);
 
-MODE: PRECISION STUDIO RECREATION
+    const response = await ai.models.generateContent({
+      model: verificationModel,
+      contents: {
+        parts: [
+          { text: verificationPromptWithDescriptor },
+          { text: "IMAGE 1 — ORIGINAL:" },
+          { inlineData: { mimeType: originalMimeType, data: originalBase64 } },
+          { text: "IMAGE 2 — GENERATED OUTPUT (evaluate this):" },
+          { inlineData: { mimeType: generatedMimeType, data: generatedBase64 } },
+        ],
+      },
+      config: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+      },
+    });
 
-Recreate this part as a pristine new studio render that exactly matches the \
-source image's camera angle, perspective, and spatial composition. \
-This is a fresh rendering — not a copy — that elevates production quality \
-while preserving every physical characteristic of the original.
+    const text = response.text?.trim();
+    if (!text) throw new Error("No verification response returned.");
 
-GEOMETRY & COMPOSITION — reproduce with exact fidelity:
-• Camera angle, elevation, and perspective: identical to source
-• Object position and orientation within the frame: identical
-• All structural features: holes, slots, teeth, bends, tabs, ridges, threads — \
-  each reproduced at their correct scale, spacing, and 3D depth
-• Proportional relationships between all features: unchanged
+    try {
+      const raw = JSON.parse(text);
+      const overallScore = (
+        (raw.inventoryMatchScore ?? 0) * 0.40 +
+        (raw.dimensionalFidelityScore ?? 0) * 0.35 +
+        (raw.noveltyScore ?? 0) * 0.25
+      );
 
-PRODUCTION UPGRADES — improve these vs. the source:
-• Material surface: sharper texture definition, more pronounced grain or finish detail
-• Lighting: cleaner, more dramatic studio key light revealing surface geometry
-• Micro-detail: machined edges, fastener recesses, and surface texture at 4K sharpness
-• Background: pristine seamless white with accurate soft contact shadow
-• Overall tonality: richer, more saturated material presence
-`;
+      const result: VerificationResult = {
+        passed: false, // will be evaluated by caller against policy thresholds
+        overallScore,
+        inventoryMatchScore: raw.inventoryMatchScore ?? 0,
+        dimensionalFidelityScore: raw.dimensionalFidelityScore ?? 0,
+        noveltyScore: raw.noveltyScore ?? 0,
+        compliancePassed: raw.compliancePassed ?? true,
+        failureReasons: (raw.failureReasons ?? []) as FailureReason[],
+        warnings: raw.warnings ?? [],
+      };
 
-const CREATIVE_PROMPT = `\
-${BASE_PROMPT}
+      console.info(
+        `[gemini] ${caller} — success | inventory=${(result.inventoryMatchScore * 100).toFixed(0)}% | fidelity=${(result.dimensionalFidelityScore * 100).toFixed(0)}% | novelty=${(result.noveltyScore * 100).toFixed(0)}% | compliance=${result.compliancePassed}`
+      );
+      return result;
+    } catch {
+      throw new Error(`Failed to parse VerificationResult JSON: ${text.substring(0, 200)}`);
+    }
+  }, 'text', { maxAttempts: 3, baseDelayMs: 800, maxDelayMs: 5000, backoffMultiplier: 2.0 });
+}
 
-MODE: MATERIAL REIMAGINE
+// ============================================================================
+// PROMPT BUILDER — buildRegenerationPrompt
+// Composes the generation prompt, optionally injecting:
+//   - The PartDescriptor context for precise identity guidance
+//   - A targeted retry directive when retrying after a known failure
+//   - User's custom instructions
+// ============================================================================
 
-Use the source image's geometry as a precise physical template. \
-Preserve every structural feature exactly, then produce a new studio render \
-with entirely reimagined surface material, finish, and lighting. \
-The result should look like a different photograph of the same physical part — \
-not a copy of the source image.
-
-GEOMETRY AND QUANTITY LOCK — preserve these physical properties perfectly:
-• Object Count & Symmetry: EXACTLY match the number of parts in the original. If there are multiple identical/paired parts, they MUST remain mathematically identical to each other in the generation (do NOT make them mismatched).
-• Volumetric proportions and structural scale. (Do NOT lock the 2D outline/silhouette, as the camera will move).
-• Every hole: accurate diameter, depth, and spatial relationship. ZERO hallucinated holes.
-• Every slot, notch, and cutout: width, length, and functional geometry
-• Every bend, tab, and tooth: accurate 3D angle relative to the rest of the part
-• Every ridge, channel, or embossed feature: depth and profile
-
-MANDATORY DYNAMIC TRANSFORMATIONS — you MUST apply these changes:
-• Camera Angle/Perspective (MANDATORY): You MUST rotate or tilt the object (e.g., 10-25 degrees). The output MUST look like a photograph taken from a slightly different angle than the original. Do NOT simply trace the original 2D silhouette.
-• Surface material texture: Elevate the texture to a premium industrial finish (e.g., micro-scratched brushed steel, bead-blasted aluminum, or polished chrome) while MAINTAINING the general color profile/material type of the original object (e.g., if it's silver metal, keep it silver metal; if it's brass, keep it brass).
-• Lighting setup: entirely new dramatic single-source studio lighting casting \
-  clean micro-shadows that reveal the part's 3D surface geometry
-• Specular character: high-contrast reflections and highlights shaped by the \
-  part's actual contours and edge quality
-• Contact shadow: rich, crisp drop shadow with accurate penumbra on white
-
-HARD CONSTRAINTS:
-• NO HALLUCINATED FEATURES: Do NOT add ANY new holes, cutouts, handles, rods, mounts, extra bolts, screws, flanges, or structural extensions that do not explicitly exist in the source image.
-• UNSEEN GEOMETRY: When rotating the part, do NOT invent complex mechanisms for the newly exposed back/sides. Keep unseen geometry logical, flat, and consistent with the visible material.
-• Do not alter any hole diameter, slot dimension, tooth spacing, or bend angle.
-• Do not flatten or soften 3D features — vertical offsets and raised geometry \
-  must be fully preserved.
-• Do not add text, numbers, serial codes, or surface engravings that are not \
-  present in the source.
-`;
-
-function buildPrompt(
+function buildRegenerationPrompt(
   mode: 'creative' | 'clone',
-  customPrompt: string = ""
+  customPrompt: string = "",
+  partDescriptor?: PartDescriptor,
+  retryDirective?: string
 ): string {
-  // Use new anti-hallucination prompts for image regenerator
-  const base = mode === 'clone' 
-    ? IMAGEREGENERATOR_CLONE_PROMPT 
+  const base = mode === 'clone'
+    ? IMAGEREGENERATOR_CLONE_PROMPT
     : IMAGEREGENERATOR_CREATIVE_PROMPT;
 
-  if (!customPrompt.trim()) return base;
+  const sections: string[] = [base];
 
-  return `${base}
+  // Inject part descriptor context for precise generation guidance
+  if (partDescriptor) {
+    const inventoryList = partDescriptor.inventory
+      .map(item => `  • ${item.count}× ${item.name} (${item.category}): ${item.shortDescription}`)
+      .join('\n');
 
+    const materialsList = partDescriptor.materials
+      .map(m => `  • ${m.component}: ${m.material}, ${m.finish}`)
+      .join('\n');
+
+    const featuresList = partDescriptor.distinctiveFeatures
+      .map(f => `  • ${f}`)
+      .join('\n');
+
+    const complianceNotes = partDescriptor.complianceFlags.length > 0
+      ? partDescriptor.complianceFlags
+          .filter(f => f.mustNeutralise)
+          .map(f => `  • REMOVE: ${f.type} — ${f.description}`)
+          .join('\n')
+      : '  • None detected';
+
+    sections.push(`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PART CONTEXT — Pre-analysis descriptor (use this to guide generation)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Assembly: ${partDescriptor.assemblyDescription}
+View type in original: ${partDescriptor.viewType}
+
+INVENTORY (every item must appear in your output):
+${inventoryList}
+
+MATERIALS & FINISHES:
+${materialsList}
+
+DISTINCTIVE FEATURES (verify these are present):
+${featuresList}
+
+COMPLIANCE — must neutralise in output:
+${complianceNotes}
+`);
+  }
+
+  // Prepend targeted retry directive if this is a corrective attempt
+  if (retryDirective?.trim()) {
+    sections.unshift(retryDirective);
+  }
+
+  // Append user custom instructions last
+  if (customPrompt.trim()) {
+    sections.push(`
 ADDITIONAL INSTRUCTIONS FROM USER:
-${customPrompt.trim()}`;
+${customPrompt.trim()}`);
+  }
+
+  return sections.join('\n');
 }
 
 // ============================================================================
 // PUBLIC API — regenerateImage
-// PRODUCTION-GRADE IMAGE REGENERATION WITH ANTI-HALLUCINATION SAFEGUARDS
+// Staged pipeline v2: analyze → generate → verify → targeted-retry
 // ============================================================================
 
 /**
- * Regenerates a technical schematic image with strict geometry preservation
- * and anti-hallucination prompting.
- * 
- * Temperature tuning:
- * - Clone mode (0.02): Reproduction is CRITICAL, minimize variance
- * - Creative mode (0.45): Encourage meaningful transformation while preserving geometry
- * 
- * Retry strategy:
- * - Aggressive retries for image generation (high failure rate)
- * - Exponential backoff to respect rate limits
- * - Model fallback: Pro -> Flash -> 2.5 Flash on consecutive failures
+ * Regenerates a product/part image.
+ *
+ * Creative mode staged pipeline:
+ *   1. Pre-analysis: extract PartDescriptor from original
+ *   2. Context-aware generation using PartDescriptor
+ *   3. Post-generation verification against original + descriptor
+ *   4. Targeted retry with failure-specific corrections (if verification fails)
+ *
+ * Clone mode: deterministic reproduction, same pipeline but lower temp +
+ *   stricter thresholds + no novelty requirement.
  */
 export async function regenerateImage(
   base64Image: string,
@@ -1201,11 +1312,17 @@ export async function regenerateImage(
   imageSize: ImageSize = "1K",
   model: ModelVersion = "gemini-3.1-flash-image-preview",
   mode: 'creative' | 'clone' = 'creative'
-): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
+): Promise<{ imageUrl: string; aspectRatio: AspectRatio; verificationResult?: VerificationResult }> {
   const caller = "regenerateImage";
 
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
+
+  const policy = getPolicyForMode(mode);
+
+  console.info(
+    `[gemini] ${caller} — starting | mode=${mode} | policy_version=${policy.version} | model=${model} | size=${imageSize}`
+  );
 
   // ========================================================================
   // STEP 1: ASPECT RATIO DETECTION
@@ -1224,126 +1341,184 @@ export async function regenerateImage(
   }
 
   // ========================================================================
-  // STEP 2: PROMPT CONSTRUCTION WITH MODE-SPECIFIC DIRECTIVES
+  // STEP 2: PRE-ANALYSIS (extract PartDescriptor for context-aware generation)
   // ========================================================================
-  const prompt = buildPrompt(mode, customPrompt);
+  let partDescriptor: PartDescriptor | undefined;
+  if (policy.enablePreAnalysis) {
+    try {
+      partDescriptor = await analyzePartForRegeneration(base64Image, mimeType);
+    } catch (e) {
+      console.warn("[gemini] Pre-analysis failed — proceeding without descriptor:", e);
+    }
+  }
 
   // ========================================================================
-  // STEP 3: TEMPERATURE TUNING FOR MODE
-  // ========================================================================
-  // CRITICAL: Temperature controls generation variance
-  // - Clone mode: 0.02 (ultra-deterministic, near-zero variance)
-  // - Creative mode: 0.45 (encourages meaningful transformation and variation)
-  // Creative needs higher temp to force perspective/lighting changes, not just upscale
-  const temperature = mode === 'clone' ? 0.02 : 0.45;
-
-  const modelParams = MODEL_DEFAULTS[model];
-
-  // ========================================================================
-  // STEP 4: AGGRESSIVE RETRY POLICY FOR IMAGE GENERATION
-  // Image generation has higher failure rate, needs robust retry
+  // STEP 3: GENERATION WITH RETRY LOOP
+  // Outer loop handles targeted retries after verification failures.
+  // Inner withRetry handles API-level failures (rate limits, network errors).
   // ========================================================================
   const regeneratePolicy: RetryPolicy = {
-    maxAttempts: 6, // Increased from 5 for image generation robustness
-    baseDelayMs: 2000, // Reduced from 3000 for faster feedback loop
-    maxDelayMs: 20000, // Increased to handle extreme backoff
-    backoffMultiplier: 2.5, // More aggressive backoff for rate limiting
+    maxAttempts: policy.maxAttempts,
+    baseDelayMs: policy.baseDelayMs,
+    maxDelayMs: policy.maxDelayMs,
+    backoffMultiplier: policy.backoffMultiplier,
   };
 
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    // ====================================================================
-    // MODEL SELECTION STRATEGY
-    // ====================================================================
-    // Attempt 1-2: Use requested model (user's choice)
-    // Attempt 3-4: Switch to Pro variant for better geometry preservation
-    // Attempt 5+: Fall back to 2.5 Flash (stable fallback)
-    let currentModel: ModelVersion;
-    if (attempt <= 2) {
-      currentModel = model;
-    } else if (attempt <= 4) {
-      currentModel = "gemini-3-pro-image-preview";
-    } else {
-      currentModel = "gemini-2.5-flash-image";
-    }
+  let lastVerificationResult: VerificationResult | undefined;
+  let retryDirective = "";
+  let targetedRetryCount = 0;
 
-    // Adjust temperature on retry: Clone stays low, Creative stays high
-    const tempAdjustment = mode === 'clone' ? 0.02 : 0.03; // Minimal adjustment to maintain intent
-    const adjustedTemp = Math.min(1.0, temperature + (attempt > 1 ? tempAdjustment : 0));
+  for (let targetedAttempt = 0; targetedAttempt <= policy.maxTargetedRetries; targetedAttempt++) {
+    const prompt = buildRegenerationPrompt(mode, customPrompt, partDescriptor, retryDirective);
 
-    console.info(
-      `[gemini] ${caller} — attempt ${attempt}/${regeneratePolicy.maxAttempts} | model=${currentModel} | mode=${mode} | temp=${adjustedTemp.toFixed(2)} | ratio=${targetAspectRatio} | size=${imageSize}`
-    );
+    const generatedImageData = await withRetry(async (attempt) => {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-    const parts: any[] = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Image } },
-    ];
+      // Model escalation: requested → Pro → 2.5 Flash
+      let currentModel: ModelVersion;
+      if (attempt <= 2) {
+        currentModel = model;
+      } else if (attempt <= 4) {
+        currentModel = "gemini-3-pro-image-preview";
+      } else {
+        currentModel = "gemini-2.5-flash-image";
+      }
 
-    // ====================================================================
-    // API CALL WITH OPTIMIZED SAMPLING PARAMETERS
-    // ====================================================================
-    // Sampling tuning:
-    // - Clone: Conservative (topP 0.85, topK 20) for deterministic reproduction
-    // - Creative: Open (topP 0.95, topK 40) to encourage diverse transformations
-    const response = await ai.models.generateContent({
-      model: currentModel,
-      contents: {
-        parts,
-      },
-      config: {
-        imageConfig: {
-          imageSize,
-          aspectRatio: targetAspectRatio,
+      // Temperature: add small increment on later targeted retries to increase diversity
+      const baseTemp = policy.temperature;
+      const retryTempBoost = targetedAttempt * 0.05;
+      const apiTempBoost = attempt > 1 ? 0.03 : 0;
+      const adjustedTemp = Math.min(1.0, baseTemp + retryTempBoost + apiTempBoost);
+
+      console.info(
+        `[gemini] ${caller} — targeted_attempt=${targetedAttempt + 1} api_attempt=${attempt}/${regeneratePolicy.maxAttempts} | model=${currentModel} | mode=${mode} | temp=${adjustedTemp.toFixed(2)} | ratio=${targetAspectRatio}`
+      );
+
+      const parts: any[] = [
+        { text: prompt },
+        { inlineData: { mimeType, data: base64Image } },
+      ];
+
+      const response = await ai.models.generateContent({
+        model: currentModel,
+        contents: { parts },
+        config: {
+          imageConfig: { imageSize, aspectRatio: targetAspectRatio },
+          temperature: adjustedTemp,
+          topP: policy.topP,
+          topK: policy.topK,
         },
-        // Sampling parameters tuned for mode
-        temperature: adjustedTemp,
-        topP: mode === 'clone' ? 0.85 : 0.95,  // Higher topP for creative mode diversity
-        topK: mode === 'clone' ? 20 : 40,      // Higher topK for creative mode choices
-      },
-    });
+      });
 
-    // ====================================================================
-    // RESPONSE VALIDATION
-    // ====================================================================
-    const candidate = response.candidates?.[0];
-    if (!candidate) {
-      throw {
-        code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates.",
-        retryable: true,
-      } satisfies AppError;
+      const candidate = response.candidates?.[0];
+      if (!candidate) {
+        throw {
+          code: ErrorCode.NO_CANDIDATES,
+          message: "Gemini API returned zero candidates.",
+          retryable: true,
+        } satisfies AppError;
+      }
+
+      if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
+        console.warn(`[gemini] ${caller} — suspicious finish reason: ${candidate.finishReason}`);
+      }
+
+      const { data, mimeType: outMime } = extractImageFromResponse(
+        candidate as Parameters<typeof extractImageFromResponse>[0]
+      );
+
+      if (!data || data.length < 1000) {
+        throw {
+          code: ErrorCode.NO_IMAGE_IN_RESPONSE,
+          message: `Image data suspiciously small (${data?.length ?? 0} bytes). Possible corruption.`,
+          retryable: true,
+        } satisfies AppError;
+      }
+
+      console.info(`[gemini] ${caller} — generated | size=${data.length} bytes | mime=${outMime}`);
+      return { data, mimeType: outMime };
+    }, 'image', regeneratePolicy);
+
+    // ======================================================================
+    // STEP 4: POST-GENERATION VERIFICATION
+    // ======================================================================
+    if (policy.enablePostVerification && partDescriptor) {
+      try {
+        const verResult = await verifyRegeneration(
+          base64Image,
+          mimeType,
+          generatedImageData.data,
+          generatedImageData.mimeType,
+          partDescriptor
+        );
+
+        // Evaluate against policy thresholds
+        const inventoryOk = verResult.inventoryMatchScore >= policy.inventoryMatchThreshold;
+        const fidelityOk  = verResult.dimensionalFidelityScore >= policy.dimensionalFidelityThreshold;
+        const noveltyOk   = policy.noveltyThreshold <= 0 || verResult.noveltyScore >= policy.noveltyThreshold;
+        const complianceOk = !policy.enableComplianceGuardrails || verResult.compliancePassed;
+
+        verResult.passed = inventoryOk && fidelityOk && noveltyOk && complianceOk;
+        lastVerificationResult = verResult;
+
+        console.info(
+          `[gemini] ${caller} — verification | passed=${verResult.passed} | ` +
+          `inventory=${(verResult.inventoryMatchScore * 100).toFixed(0)}% (min ${(policy.inventoryMatchThreshold * 100).toFixed(0)}%) | ` +
+          `fidelity=${(verResult.dimensionalFidelityScore * 100).toFixed(0)}% (min ${(policy.dimensionalFidelityThreshold * 100).toFixed(0)}%) | ` +
+          `novelty=${(verResult.noveltyScore * 100).toFixed(0)}% (min ${(policy.noveltyThreshold * 100).toFixed(0)}%) | ` +
+          `compliance=${complianceOk}`
+        );
+
+        if (verResult.passed) {
+          return {
+            imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
+            aspectRatio: targetAspectRatio,
+            verificationResult: verResult,
+          };
+        }
+
+        // Build targeted retry directive for next attempt
+        if (policy.enableTargetedRetry && targetedAttempt < policy.maxTargetedRetries) {
+          retryDirective = buildTargetedRetryDirective(verResult.failureReasons);
+          targetedRetryCount++;
+          console.warn(
+            `[gemini] ${caller} — verification failed | reasons: ${verResult.failureReasons.map(r => r.type).join(', ')} | targeted_retry=${targetedRetryCount}`
+          );
+          // Brief pause before targeted retry
+          await sleep(1500);
+          continue;
+        }
+
+        // Max targeted retries exhausted — return best result with warning
+        console.warn(`[gemini] ${caller} — max targeted retries exhausted; returning last output with verification attached`);
+        return {
+          imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
+          aspectRatio: targetAspectRatio,
+          verificationResult: verResult,
+        };
+      } catch (verifyError) {
+        // Verification itself failed — log and proceed without gating
+        console.warn("[gemini] Post-generation verification failed:", verifyError);
+        return {
+          imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
+          aspectRatio: targetAspectRatio,
+        };
+      }
     }
 
-    // Verify finish reason is not an error condition
-    if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
-      console.warn(`[gemini] ${caller} — attempt ${attempt} — suspicious finish reason: ${candidate.finishReason}`);
-    }
-
-    // ====================================================================
-    // IMAGE EXTRACTION & VALIDATION
-    // ====================================================================
-    const { data, mimeType: outMime } = extractImageFromResponse(
-      candidate as Parameters<typeof extractImageFromResponse>[0]
-    );
-
-    // Basic sanity check on output
-    if (!data || data.length < 1000) {
-      throw {
-        code: ErrorCode.NO_IMAGE_IN_RESPONSE,
-        message: `Image data suspiciously small (${data?.length ?? 0} bytes). Possible corruption.`,
-        retryable: true,
-      } satisfies AppError;
-    }
-
-    console.info(`[gemini] ${caller} — attempt ${attempt} — success | size=${data.length} bytes | mime=${outMime}`);
-
+    // No verification configured — return immediately
     return {
-      imageUrl: `data:${outMime};base64,${data}`,
+      imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
       aspectRatio: targetAspectRatio,
     };
-  }, 'image', regeneratePolicy);
+  }
+
+  // Should never reach here — TypeScript safety fallback
+  throw {
+    code: ErrorCode.GENERATION_FAILED,
+    message: "regenerateImage: all targeted retry attempts exhausted.",
+    retryable: false,
+  } satisfies AppError;
 }
 
 // ============================================================================
