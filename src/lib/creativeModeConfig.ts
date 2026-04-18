@@ -160,6 +160,16 @@ export type FailureReason =
   | { type: 'topology_change'; details: string }
   | { type: 'morphing'; details: string };
 
+/**
+ * Maximum dimensionalFidelityScore that may be assigned when a topology_change
+ * or morphing failure is present. A part with the wrong fundamental 3D form
+ * (e.g. U-channel → C-channel, flat → arch) has near-zero dimensional fidelity
+ * regardless of how well other proportions match. Keeping this value low (0.15)
+ * ensures the 0.75 fidelity threshold reliably gates these outputs.
+ * Must be kept in sync with the ceiling stated in GENERATION_VERIFICATION_PROMPT.
+ */
+export const TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE = 0.15;
+
 // ============================================================================
 // POLICIES
 // ============================================================================
@@ -189,6 +199,10 @@ export const CREATIVE_POLICY: ModePolicy = {
 
   // Tighter acceptance gates: topology hallucinations now need to score higher
   // to pass, which forces more targeted retries on bad outputs.
+  // 0.90 inventory: at most ~1 small ambiguous part may be unaccounted for.
+  // 0.75 fidelity:  allows mild perspective-induced drift (~10%) while still
+  //                 rejecting cross-section violations (which score ≤0.15 after
+  //                 the TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE hard-cap).
   inventoryMatchThreshold: 0.90,
   dimensionalFidelityThreshold: 0.75,
   noveltyThreshold: 0.30,

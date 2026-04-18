@@ -32,6 +32,7 @@ import {
   VerificationResult,
   FailureReason,
   CREATIVE_MODE_VERSION,
+  TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE,
 } from "./creativeModeConfig";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1192,7 +1193,10 @@ ${descriptorJson}
           r.type === 'topology_change' || r.type === 'morphing'
         );
       if (hasTopologyOrMorphingFailure) {
-        raw.dimensionalFidelityScore = Math.min(raw.dimensionalFidelityScore ?? 0, 0.15);
+        raw.dimensionalFidelityScore = Math.min(
+          raw.dimensionalFidelityScore ?? 0,
+          TOPOLOGY_FAILURE_MAX_FIDELITY_SCORE
+        );
       }
 
       const overallScore = (

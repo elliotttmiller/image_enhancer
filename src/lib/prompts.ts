@@ -297,9 +297,9 @@ A.3 PROPORTIONAL FIDELITY
 A.4 FEATURE INVENTORY
    • All holes: correct diameter ratio and spatial position relative to the part.
    • All slots, notches, cutouts: correct width/length/depth relationships
-     AND correct SHAPE — a circular notch must remain circular (NOT rectangular or oval);
+     AND correct SHAPE — a semi-circular notch must remain semi-circular (NOT rectangular or oval);
      a rectangular slot must remain rectangular (NOT circular or irregular).
-     ✗ FAILURE: substituting a circular semi-circular notch with a rectangular cutout.
+     ✗ FAILURE: substituting a semi-circular notch with a rectangular cutout.
      ✗ FAILURE: substituting a rectangular slot with a round hole.
    • All threads: same pitch and thread form visible on the same fasteners.
    • All teeth, splines, keyways: identical count and profile.
@@ -659,7 +659,8 @@ SCORING GUIDANCE:
     If you include a "morphing" failure reason: dimensionalFidelityScore
     MUST be 0.00–0.15. A part with the wrong number of coils/loops/bends/bridges
     is fundamentally wrong.
-    Do NOT score these cases at 0.4 or higher. 0.15 is the hard ceiling.
+    Do NOT score these cases at 0.4 or higher. 0.15 is the hard ceiling
+    and is enforced programmatically — any higher value will be capped to 0.15.
 
     BRIDGE HEIGHT OVERRIDE:
     If a raised bridge in the generated image is more than 2× taller than in the
