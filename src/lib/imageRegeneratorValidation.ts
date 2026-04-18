@@ -1,12 +1,15 @@
 /**
  * imageRegeneratorValidation.ts
  * 
- * Enhanced batch processing with validation gates and fallback strategies
- * Integrates geometric validation to prevent hallucinated outputs
+ * Production-grade batch processing with validation gates and fallback strategies.
+ * Component detection uses real Gemini AI vision analysis (replaces previous mock).
+ * Integrates geometric validation to prevent hallucinated outputs.
  */
 
+import { GoogleGenAI, Type } from "@google/genai";
 import { AppError, ErrorCode } from "../types";
 import { geometryValidator, buildGeometryProfile, DetectedComponent, ValidationResult } from "./geometryValidator";
+import { VerificationResult } from "./creativeModeConfig";
 
 // ============================================================================
 // VALIDATION RESULT TYPES
@@ -17,11 +20,28 @@ export interface ProcessingResult {
   originalDataUri: string;
   generatedDataUri?: string;
   validationResult?: ValidationResult;
+  /** AI-based creative validation report (set when post-verification ran) */
+  creativeValidationReport?: CreativeValidationReport;
   status: 'pending' | 'processing' | 'success' | 'validation_failed' | 'error';
   error?: string;
   warnings?: string[];
   retryCount: number;
   maxRetries: number;
+}
+
+/**
+ * Rich validation report that combines geometric scoring with the AI verification
+ * result from verifyRegeneration. Shown in the UI as a per-item quality card.
+ */
+export interface CreativeValidationReport {
+  overallScore: number;            // 0–1 composite
+  inventoryMatchScore: number;     // 0–1
+  dimensionalFidelityScore: number;// 0–1
+  noveltyScore: number;            // 0–1
+  compliancePassed: boolean;
+  passed: boolean;
+  failureSummary: string[];
+  warnings: string[];
 }
 
 export interface BatchProcessingConfig {
@@ -76,8 +96,58 @@ export class ValidatedImageProcessor {
   }
 
   /**
-   * Validate generated image against original
-   * Returns validation result and determines if retry is needed
+   * Attach an AI verification result (from verifyRegeneration) to a tracked item
+   * and produce the CreativeValidationReport shown in the UI.
+   */
+  attachVerificationResult(
+    itemId: string,
+    verResult: VerificationResult
+  ): CreativeValidationReport {
+    const existing = this.results.get(itemId);
+
+    const failureSummary: string[] = verResult.failureReasons.map(r => {
+      switch (r.type) {
+        case 'inventory_mismatch':
+          return [
+            r.missing?.length ? `Missing: ${r.missing.join(', ')}` : '',
+            r.extra?.length ? `Extra: ${r.extra.join(', ')}` : '',
+          ].filter(Boolean).join(' | ');
+        case 'insufficient_novelty':
+          return `Insufficient transformation (${((r.currentScore ?? 0) * 100).toFixed(0)}% < ${((r.requiredScore ?? 0.30) * 100).toFixed(0)}% required)`;
+        case 'dimensional_drift':
+          return `Dimensional drift on: ${r.affectedFeatures?.join(', ')}`;
+        case 'compliance_violation':
+          return `IP violation: ${r.violations?.join('; ')}`;
+        case 'topology_change':
+        case 'morphing':
+          return r.details ?? r.type;
+        default:
+          return (r as { type: string }).type;
+      }
+    });
+
+    const report: CreativeValidationReport = {
+      overallScore: verResult.overallScore,
+      inventoryMatchScore: verResult.inventoryMatchScore,
+      dimensionalFidelityScore: verResult.dimensionalFidelityScore,
+      noveltyScore: verResult.noveltyScore,
+      compliancePassed: verResult.compliancePassed,
+      passed: verResult.passed,
+      failureSummary,
+      warnings: verResult.warnings,
+    };
+
+    if (existing) {
+      existing.creativeValidationReport = report;
+      this.results.set(itemId, existing);
+    }
+
+    return report;
+  }
+
+  /**
+   * Validate generated image against original using geometric analysis.
+   * Returns validation result and determines if retry is needed.
    */
   async validateGeneration(
     itemId: string,
@@ -152,6 +222,7 @@ export class ValidatedImageProcessor {
       warnings: result.warnings,
       validationScore: result.validationResult?.score ?? null,
       issues: result.validationResult?.issues ?? [],
+      creativeValidation: result.creativeValidationReport ?? null,
     };
   }
 
@@ -185,51 +256,84 @@ export class ValidatedImageProcessor {
 }
 
 // ============================================================================
-// COMPONENT DETECTION MOCK
-// For production, integrate with actual image analysis (OpenCV, TensorFlow, etc.)
+// COMPONENT DETECTION — Gemini AI Vision Analysis
+// Replaces the previous placeholder/mock implementation with a real call to
+// Gemini that extracts component bounding boxes and classifications from the
+// image. Used by ValidatedImageProcessor.validateGeneration for geometric
+// fidelity scoring in the batch pipeline.
 // ============================================================================
+
+const COMPONENT_DETECTION_PROMPT = `
+Analyse the attached product/parts image. Identify and locate every discrete physical
+component visible in the image. For each component return a JSON object with:
+- "id": a short unique identifier (e.g. "comp_1")
+- "type": one of "fastener" | "structural" | "mechanical" | "seal" | "electrical" | "other"
+- "count": how many instances of this component are visible
+- "boundingBox": { "x": <px from left>, "y": <px from top>, "width": <px>, "height": <px> }
+  Coordinates are in pixels assuming a 1000×1000 normalised image space.
+- "confidence": 0.0–1.0
+
+Return a JSON array of these objects only. No markdown, no commentary.
+`;
 
 export async function detectComponents(
   base64Image: string,
   imageDimensions: { width: number; height: number }
 ): Promise<DetectedComponent[]> {
-  // This is a placeholder implementation.
-  // In production, this would:
-  // 1. Decode the base64 image
-  // 2. Run edge detection or ML-based component detection
-  // 3. Cluster connected components
-  // 4. Classify each component (fastener, structural, etc.)
-  // 5. Return bounding boxes and confidence scores
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('[detectComponents] No GEMINI_API_KEY — returning empty component list.');
+    return [];
+  }
 
-  // For now, return a mock result
-  console.warn('[MOCK] detectComponents: Returning mock data. Integrate real image analysis.');
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-pro-preview',
+      contents: {
+        parts: [
+          { text: COMPONENT_DETECTION_PROMPT },
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+        ],
+      },
+      config: {
+        temperature: 0.05,
+        responseMimeType: 'application/json',
+      },
+    });
 
-  return [
-    {
-      id: 'comp_1',
-      type: 'fastener',
-      count: 1,
+    const text = response.text?.trim();
+    if (!text) {
+      console.warn('[detectComponents] Empty response from Gemini — returning empty list.');
+      return [];
+    }
+
+    const raw = JSON.parse(text);
+    if (!Array.isArray(raw)) {
+      console.warn('[detectComponents] Unexpected response shape:', text.substring(0, 200));
+      return [];
+    }
+
+    // Normalise bounding boxes from 1000×1000 space to actual image pixels
+    const scaleX = imageDimensions.width / 1000;
+    const scaleY = imageDimensions.height / 1000;
+
+    return raw.map((item: any, i: number): DetectedComponent => ({
+      id: item.id ?? `comp_${i + 1}`,
+      type: item.type ?? 'other',
+      count: typeof item.count === 'number' ? item.count : 1,
       boundingBox: {
-        x: 100,
-        y: 100,
-        width: 50,
-        height: 50,
+        x: Math.round((item.boundingBox?.x ?? 0) * scaleX),
+        y: Math.round((item.boundingBox?.y ?? 0) * scaleY),
+        width: Math.round((item.boundingBox?.width ?? 50) * scaleX),
+        height: Math.round((item.boundingBox?.height ?? 50) * scaleY),
       },
-      confidence: 0.95,
-    },
-    {
-      id: 'comp_2',
-      type: 'structural',
-      count: 1,
-      boundingBox: {
-        x: 200,
-        y: 150,
-        width: 300,
-        height: 200,
-      },
-      confidence: 0.99,
-    },
-  ];
+      confidence: typeof item.confidence === 'number' ? item.confidence : 0.8,
+    }));
+  } catch (err) {
+    console.error('[detectComponents] AI detection failed:', err);
+    return [];
+  }
 }
 
 // ============================================================================

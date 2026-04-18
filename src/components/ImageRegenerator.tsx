@@ -1,9 +1,10 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { Upload, X, Loader2, Sparkles, Download, FolderOpen, RefreshCw, AlertCircle } from 'lucide-react';
+import { Upload, X, Loader2, Sparkles, Download, FolderOpen, RefreshCw, AlertCircle, ShieldCheck, ShieldX, Info } from 'lucide-react';
 import { regenerateImage, refineImage } from '../lib/gemini';
 import { AspectRatioOption, ImageSize, ModelVersion, ASPECT_RATIO_LABELS } from '../types';
+import type { VerificationResult } from '../lib/creativeModeConfig';
 
 interface RegenerationItem {
   id: string;
@@ -12,6 +13,8 @@ interface RegenerationItem {
   generatedDataUri?: string;
   status: 'pending' | 'processing' | 'success' | 'error';
   error?: string;
+  /** Attached when post-generation verification ran */
+  verificationResult?: VerificationResult;
 }
 
 interface ImageRegeneratorProps {
@@ -113,7 +116,8 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
         setItems(prev => prev.map(p => p.id === item.id ? { 
           ...p, 
           status: 'success', 
-          generatedDataUri: result.imageUrl 
+          generatedDataUri: result.imageUrl,
+          verificationResult: result.verificationResult,
         } : p));
       } catch (error: any) {
         console.error(`Error processing ${item.filename}:`, error);
@@ -203,6 +207,44 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
     if (confirm('Are you sure you want to clear all items?')) {
       setItems([]);
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Verification badge — shown on successfully generated items
+  // ---------------------------------------------------------------------------
+  const VerificationBadge = ({ item }: { item: RegenerationItem }) => {
+    const vr = item.verificationResult;
+    if (!vr) return null;
+
+    const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+    const passed = vr.passed;
+    const complianceOk = vr.compliancePassed;
+
+    const bgClass = passed && complianceOk
+      ? 'bg-emerald-900/60 border-emerald-500/30'
+      : 'bg-yellow-900/60 border-yellow-500/30';
+
+    const Icon = passed && complianceOk ? ShieldCheck : ShieldX;
+    const iconClass = passed && complianceOk ? 'text-emerald-400' : 'text-yellow-400';
+
+    return (
+      <div className={`absolute bottom-0 left-0 right-0 ${bgClass} border-t px-2 py-1 flex items-center gap-1.5`}>
+        <Icon className={`w-3 h-3 shrink-0 ${iconClass}`} />
+        <div className="flex gap-1.5 text-[9px] text-neutral-300 overflow-hidden">
+          <span title="Inventory match">I:{pct(vr.inventoryMatchScore)}</span>
+          <span className="text-white/20">·</span>
+          <span title="Dimensional fidelity">D:{pct(vr.dimensionalFidelityScore)}</span>
+          <span className="text-white/20">·</span>
+          <span title="Transformation novelty">N:{pct(vr.noveltyScore)}</span>
+          {!complianceOk && (
+            <>
+              <span className="text-white/20">·</span>
+              <span className="text-red-400" title="Compliance failed">⚠ IP</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -439,6 +481,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                             <AlertCircle className="w-4 h-4" />
                           </div>
                         )}
+                        {item.status === 'success' && <VerificationBadge item={item} />}
                       </div>
                       <div className="p-3 bg-neutral-800/80 max-w-full">
                         <p className="text-xs text-white truncate font-medium max-w-full" title={item.filename}>{item.filename}</p>
@@ -505,6 +548,77 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                   >
                     Refine
                   </button>
+                </div>
+              )}
+
+              {/* Verification detail panel */}
+              {selectedItem.verificationResult && (
+                <div className={`mt-4 rounded-xl border px-4 py-3 ${
+                  selectedItem.verificationResult.passed && selectedItem.verificationResult.compliancePassed
+                    ? 'bg-emerald-900/30 border-emerald-500/20'
+                    : 'bg-yellow-900/30 border-yellow-500/20'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {selectedItem.verificationResult.passed && selectedItem.verificationResult.compliancePassed
+                      ? <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      : <ShieldX className="w-4 h-4 text-yellow-400" />
+                    }
+                    <span className="text-sm font-semibold text-white">
+                      Quality Verification {selectedItem.verificationResult.passed ? 'Passed' : 'Concerns Found'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 mb-2">
+                    {[
+                      { label: 'Inventory', score: selectedItem.verificationResult.inventoryMatchScore, min: 0.85 },
+                      { label: 'Fidelity', score: selectedItem.verificationResult.dimensionalFidelityScore, min: 0.70 },
+                      { label: 'Novelty', score: selectedItem.verificationResult.noveltyScore, min: 0.30 },
+                      { label: 'Compliance', score: selectedItem.verificationResult.compliancePassed ? 1 : 0, min: 1 },
+                    ].map(({ label, score, min }) => (
+                      <div key={label} className="bg-neutral-800/60 rounded-lg p-2 text-center">
+                        <div className={`text-base font-bold ${score >= min ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                          {label === 'Compliance' ? (score === 1 ? '✓' : '✗') : `${(score * 100).toFixed(0)}%`}
+                        </div>
+                        <div className="text-[10px] text-neutral-400">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedItem.verificationResult.failureReasons.length > 0 && (
+                    <div className="space-y-1">
+                      {selectedItem.verificationResult.failureReasons.map((r, i) => {
+                        let detail = '';
+                        switch (r.type) {
+                          case 'inventory_mismatch':
+                            if (r.missing?.length) detail = `: missing ${r.missing.join(', ')}`;
+                            break;
+                          case 'compliance_violation':
+                            detail = `: ${r.violations?.join('; ')}`;
+                            break;
+                          case 'insufficient_novelty':
+                            detail = ` (${(r.currentScore * 100).toFixed(0)}% < ${(r.requiredScore * 100).toFixed(0)}% required)`;
+                            break;
+                          case 'dimensional_drift':
+                            detail = r.affectedFeatures?.length ? `: ${r.affectedFeatures.join(', ')}` : '';
+                            break;
+                          case 'topology_change':
+                          case 'morphing':
+                            detail = r.details ? `: ${r.details}` : '';
+                            break;
+                        }
+                        return (
+                          <div key={i} className="flex items-start gap-2 text-xs text-yellow-300">
+                            <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                            <span>{r.type.replace(/_/g, ' ')}{detail}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedItem.verificationResult.warnings.length > 0 && (
+                    <div className="mt-1 flex items-start gap-2 text-xs text-neutral-400">
+                      <Info className="w-3 h-3 mt-0.5 shrink-0" />
+                      <span>{selectedItem.verificationResult.warnings.join(' · ')}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
