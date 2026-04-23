@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 
@@ -17,9 +18,26 @@ function getVertexClient() {
     throw new Error("Missing VERTEX_PROJECT_ID or VERTEX_LOCATION in environment variables.");
   }
 
-  // Uses Google Application Credentials by default or VERTEX_API_KEY if GCP provides one
+  // AI Studio injects GEMINI_API_KEY into the process.env aggressively.
+  // The @google/genai SDK picks it up by default, and sends it to Vertex,
+  // which rejects it because Vertex only supports Service Accounts/ADC.
+  // We MUST explicitly clear it in the runtime configuration for Vertex.
+  if (process.env.GEMINI_API_KEY) {
+      delete process.env.GEMINI_API_KEY;
+  }
+
+  // If the user provided a Service Account JSON explicitly as an ENV var string, write it to a temp file
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+     const credentialsPath = path.join(process.cwd(), '.temp-google-credentials.json');
+     // Write sync is safe here since this initialization only fires on first request 
+     // or can be considered an isolated server operation
+     fs.writeFileSync(credentialsPath, process.env.GOOGLE_CREDENTIALS_JSON);
+     // Point the Google Auth Library to this file
+     process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+  }
+
   return new GoogleGenAI({ 
-    vertexai: { project, location } 
+    vertexai: { project, location }
   });
 }
 
