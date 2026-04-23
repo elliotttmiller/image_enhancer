@@ -135,28 +135,18 @@ export default function App() {
   }, [currentProjectId, currentProject?.generatedImages]);
 
   useEffect(() => {
-    checkApiKey();
+    // We are now decoupled from AI Studio's API Key injected credential 
+    // and rely on our full-stack Express Backend for Vertex AI.
+    setHasApiKey(true);
   }, []);
 
   const checkApiKey = async () => {
-    if (window.aistudio) {
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      setHasApiKey(hasKey);
-    } else {
-      setHasApiKey(true); 
-    }
+    // Deprecated for Vertex AI
+    setHasApiKey(true);
   };
 
   const handleSelectKey = async () => {
-    if (window.aistudio) {
-      try {
-        await window.aistudio.openSelectKey();
-        setHasApiKey(true);
-      } catch (e) {
-        console.error("Failed to select key", e);
-        setError("Failed to select API key. Please try again.");
-      }
-    }
+    // Deprecated for Vertex AI
   };
 
   const createProject = (originalImage: string | null, name: string = "Untitled Project", workflowType: "generate" | "refine" | "extract" | "batch" = "generate", id?: string) => {

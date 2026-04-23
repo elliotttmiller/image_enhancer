@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { GoogleGenAI } from "./vertex-client";
 import { RawHotspot } from "../types";
 import { drawHotspotsOnImage } from "./hotspotOverlay";
 

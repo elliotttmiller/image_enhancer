@@ -2,7 +2,8 @@
 // Production Grade — v3.0
 // Elite prompt architecture, circuit-breaker resilience, precision generation
 
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "./vertex-client";
 import { SchematicExtractionSession } from "./SchematicExtractionSession";
 import {
   AspectRatio,

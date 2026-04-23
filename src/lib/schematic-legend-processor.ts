@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { GoogleGenAI } from "./vertex-client";
 import { withRetry } from "./gemini";
 import { STAGE_2_SYSTEM, STAGE_4_SYSTEM, STAGE_6_SYSTEM } from "./prompts";
 
