@@ -1,7 +1,6 @@
 // gemini.ts
-// Production Grade — v4.0
-// Staged pipeline: analyze → generate → verify → targeted-retry
-// Modular prompt contracts, real validation, IP/compliance guardrails
+// Production Grade — v3.0
+// Elite prompt architecture, circuit-breaker resilience, precision generation
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { SchematicExtractionSession } from "./SchematicExtractionSession";
@@ -19,13 +18,6 @@ import {
   ImageMimeType,
   RawHotspot,
 } from "../types";
-import {
-  IMAGEREGENERATOR_CLONE_PROMPT,
-  IMAGEREGENERATOR_CREATIVE_PROMPT,
-} from "./prompts";
-import {
-  getPolicyForMode,
-} from "./creativeModeConfig";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1076,16 +1068,84 @@ export async function refineSchematic(
 }
 
 // ============================================================================
-// PROMPT BUILDER — buildRegenerationPrompt
+// PROMPT ENGINEERING — regenerateImage
 // ============================================================================
 
-function buildRegenerationPrompt(
+const BASE_PROMPT = `\
+You are a professional product photographer and 3D rendering specialist producing \
+commercial-grade studio imagery for an industrial e-commerce catalog.
+
+The reference image shows a physical part, tool, or hardware component. \
+Your task is to produce a new, standalone product photograph — not a visual copy \
+of the original, but a freshly rendered studio image that accurately represents \
+the same physical object with improved production quality.
+
+OUTPUT STANDARD (apply to all renders):
+• Background: pure white (#FFFFFF), infinite/seamless, no gradients or vignettes
+• Lighting: soft directional studio key light from upper-left, secondary fill light, no harsh clipping
+• Shadow: subtle, sharp-edged contact shadow grounding the object to the surface
+• Focus: full part in sharp focus — no depth-of-field blur anywhere on the subject
+• Surface fidelity: hyper-realistic material textures at 4K-grade resolution
+• Markings: reproduce only text, numbers, logos, or engravings that are unambiguously \
+visible in the source image — do not invent or add any markings
+`;
+
+const CLONE_PROMPT = `\
+${BASE_PROMPT}
+
+MODE: PRECISION STUDIO RECREATION
+
+Recreate this part as a pristine new studio render that exactly matches the \
+source image's camera angle, perspective, and spatial composition. \
+This is a fresh rendering — not a copy — that elevates production quality \
+while preserving every physical characteristic of the original.
+
+GEOMETRY & COMPOSITION — reproduce with exact fidelity:
+• Camera angle, elevation, and perspective: identical to source
+• Object position and orientation within the frame: identical
+• All structural features: holes, slots, teeth, bends, tabs, ridges, threads — \
+  each reproduced at their correct scale, spacing, and 3D depth
+• Proportional relationships between all features: unchanged
+
+PRODUCTION UPGRADES — improve these vs. the source:
+• Material surface: sharper texture definition, more pronounced grain or finish detail
+• Lighting: cleaner, more dramatic studio key light revealing surface geometry
+• Micro-detail: machined edges, fastener recesses, and surface texture at 4K sharpness
+• Background: pristine seamless white with accurate soft contact shadow
+• Overall tonality: richer, more saturated material presence
+`;
+
+const CREATIVE_PROMPT = `\
+${BASE_PROMPT}
+
+MODE: PREMIUM COMMERCIAL SHOWCASE
+
+You are an elite product photographer and 3D artist. Transform this part into a stunning, high-end commercial 3D render.
+The result must be a COMPLETELY NEW and UNIQUE professional showcase image that visually transcends the original snapshot.
+
+MANDATORY AESTHETIC TRANSFORMATIONS (DO NOT REPLICATE THE ORIGINAL):
+• Camera Angle & Perspective (CRITICAL): Shift the perspective significantly by rotating or tilting the object (e.g., 15-35 degrees). DO NOT trace or reuse the original 2D silhouette. The composition must look like an entirely different premium photograph.
+• Studio Lighting: Implement dramatic, cinematic studio lighting. Introduce striking directional light, bright edge-rim lighting, and soft-box reflections to make the form pop.
+• Drop Shadow: Replace any flat or messy shadows with a gorgeous, soft-tapered commercial contact shadow on a pristine white background.
+• Material Quality: Overhaul the flat surface into a photorealistic, premium industrial finish (while keeping the original general material class/color). Emphasize hyper-realistic micro-textures like bead-blasting, delicate directional brushing, or sleek anodizing.
+
+MECHANICAL INTEGRITY (QUANTITY & GEOMETRY LOCK):
+Even though the presentation is radically upgraded, the underlying physical engineering MUST remain accurate:
+• Object Count: EXACTLY match the number of parts in the original (e.g., 1 part = 1 part. NO duplicates).
+• Core Dimensions: Maintain all accurate structural scale, hole placements/diameters, slot dimensions, and 3D bends.
+• Volumetric Proportions: Preserve the thickness and depth of all physical features.
+
+HARD CONSTRAINTS (FIREWALL):
+• NO HALLUCINATED HARDWARE: Do NOT add any handles, rods, mounts, extra bolts, screws, flanges, or structural extensions that do not explicitly exist in the source image.
+• UNSEEN GEOMETRY: When rotating the part, do NOT invent complex or bizarre mechanisms for the newly exposed back/sides. Keep unseen geometry geometric, logical, and continuous with the known shape.
+• Do not add text, numbers, serial codes, or surface engravings that are not present in the source snapshot.
+`;
+
+function buildPrompt(
   mode: 'creative' | 'clone',
   customPrompt: string = ""
 ): string {
-  const base = mode === 'clone'
-    ? IMAGEREGENERATOR_CLONE_PROMPT
-    : IMAGEREGENERATOR_CREATIVE_PROMPT;
+  const base = mode === 'clone' ? CLONE_PROMPT : CREATIVE_PROMPT;
 
   if (!customPrompt.trim()) return base;
 
@@ -1097,19 +1157,8 @@ ${customPrompt.trim()}`;
 
 // ============================================================================
 // PUBLIC API — regenerateImage
-// Single-pass intelligent generation: the prompt contains a built-in
-// self-analysis phase so no separate pre-analysis API call is needed.
-// API-level retry handles transient failures (rate limits, network errors).
 // ============================================================================
 
-/**
- * Regenerates a product/part image using intelligent single-pass prompt engineering.
- *
- * The generation prompt contains a structured self-analysis chain-of-thought that
- * instructs the model to internally analyse the image (inventory, topology, materials,
- * compliance) before rendering, producing professional first-run results without
- * additional API round-trips for pre-analysis or post-verification.
- */
 export async function regenerateImage(
   base64Image: string,
   mimeType: string,
@@ -1124,69 +1173,57 @@ export async function regenerateImage(
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
 
-  const policy = getPolicyForMode(mode);
-
-  console.info(
-    `[gemini] ${caller} — starting | mode=${mode} | model=${model} | size=${imageSize}`
-  );
-
-  // ========================================================================
-  // ASPECT RATIO DETECTION
-  // ========================================================================
+  // Handle Auto Aspect Ratio
   let targetAspectRatio: AspectRatio;
   if (aspectRatio === "auto") {
     try {
       targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
-      console.info(`[gemini] ${caller} — auto-detected aspect ratio: ${targetAspectRatio}`);
     } catch (e) {
-      console.error("[gemini] Failed to auto-detect aspect ratio, defaulting to 1:1", e);
+      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
       targetAspectRatio = "1:1";
     }
   } else {
     targetAspectRatio = aspectRatio;
   }
 
-  const prompt = buildRegenerationPrompt(mode, customPrompt);
+  const prompt = buildPrompt(mode, customPrompt);
+
+  const modelParams = MODEL_DEFAULTS[model];
+
+  // Clone: minimal temperature — composition must be reproduced precisely.
+  // Creative: low but enough to calculate slight angle/perspective micro-shifts (0.25).
+  const temperature = mode === 'clone' ? 0.05 : 0.25;
 
   const regeneratePolicy: RetryPolicy = {
     maxAttempts: 5,
-    baseDelayMs: 800,
-    maxDelayMs: 10000,
+    baseDelayMs: 3000,
+    maxDelayMs: 15000,
     backoffMultiplier: 2.0,
   };
 
-  const generatedImageData = await withRetry(async (attempt) => {
+  return withRetry(async (attempt) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-    // Model escalation: requested model → Pro → 2.5 Flash on later retries
-    let currentModel: ModelVersion;
-    if (attempt <= 2) {
-      currentModel = model;
-    } else if (attempt <= 4) {
-      currentModel = "gemini-3-pro-image-preview";
-    } else {
-      currentModel = "gemini-2.5-flash-image";
-    }
-
-    const adjustedTemp = Math.min(1.0, policy.temperature + (attempt > 1 ? 0.03 : 0));
+    const currentModel = attempt > 1 ? "gemini-2.5-flash-image" : model;
 
     console.info(
-      `[gemini] ${caller} — attempt=${attempt}/${regeneratePolicy.maxAttempts} | model=${currentModel} | mode=${mode} | temp=${adjustedTemp.toFixed(2)} | ratio=${targetAspectRatio}`
+      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | mode=${mode} | temp=${temperature.toFixed(2)} | ratio=${targetAspectRatio}`
     );
+
+    const parts: any[] = [
+      { text: prompt },
+      { inlineData: { mimeType, data: base64Image } },
+    ];
 
     const response = await ai.models.generateContent({
       model: currentModel,
       contents: {
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Image } },
-        ],
+        parts,
       },
       config: {
         imageConfig: { imageSize, aspectRatio: targetAspectRatio },
-        temperature: adjustedTemp,
-        topP: policy.topP,
-        topK: policy.topK,
+        temperature,
+        topP: modelParams.topP,
+        topK: modelParams.topK,
       },
     });
 
@@ -1199,49 +1236,18 @@ export async function regenerateImage(
       } satisfies AppError;
     }
 
-    if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
-      console.warn(`[gemini] ${caller} — suspicious finish reason: ${candidate.finishReason}`);
-    }
-
-    const { data, mimeType: outMime } = extractImageFromResponse(
-      candidate as Parameters<typeof extractImageFromResponse>[0]
-    );
-
-    if (!data || data.length < 1000) {
-      throw {
-        code: ErrorCode.NO_IMAGE_IN_RESPONSE,
-        message: `Image data suspiciously small (${data?.length ?? 0} bytes). Possible corruption.`,
-        retryable: true,
-      } satisfies AppError;
-    }
-
-    console.info(`[gemini] ${caller} — generated | size=${data.length} bytes | mime=${outMime}`);
-    return { data, mimeType: outMime };
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
+    return {
+      imageUrl: `data:${outMime};base64,${data}`,
+      aspectRatio: targetAspectRatio,
+    };
   }, 'image', regeneratePolicy);
-
-  return {
-    imageUrl: `data:${generatedImageData.mimeType};base64,${generatedImageData.data}`,
-    aspectRatio: targetAspectRatio,
-  };
 }
 
 // ============================================================================
 // PUBLIC API — refineImage
-// PRODUCTION-GRADE REFINEMENT WITH TARGETED GEOMETRY PRESERVATION
 // ============================================================================
 
-/**
- * Applies targeted refinements to a generated image while preserving
- * core geometry and structure.
- * 
- * Temperature tuning:
- * - 0.25 (low): Focus on user's specific refinement directive
- * - Prevents model from over-interpreting the instruction
- * 
- * Retry strategy:
- * - Conservative retries (3) since image is already generated
- * - Fallback to alternative models if primary fails
- */
 export async function refineImage(
   base64Image: string,
   mimeType: string,
@@ -1260,108 +1266,46 @@ export async function refineImage(
     throw new Error("A refinement prompt is required to apply revisions.");
   }
 
-  // ========================================================================
-  // ASPECT RATIO HANDLING
-  // ========================================================================
+  // Handle Auto Aspect Ratio
   let targetAspectRatio: AspectRatio;
   if (aspectRatio === "auto") {
     try {
       targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
     } catch (e) {
-      console.error("[gemini] Failed to auto-detect aspect ratio for refinement, defaulting to 1:1", e);
+      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
       targetAspectRatio = "1:1";
     }
   } else {
     targetAspectRatio = aspectRatio;
   }
 
-  // ========================================================================
-  // REFINEMENT PROMPT CONSTRUCTION
-  // Wraps user's directive with anti-hallucination guards
-  // ========================================================================
   const prompt = `
-🔧 PRODUCTION IMAGE REFINEMENT DIRECTIVE
-========================================
-
-You are an expert technical renderer and image refinement specialist.
-Your task is to apply a TARGETED refinement to the provided generated image.
-
-CRITICAL CONSTRAINTS (NON-NEGOTIABLE):
-=========================================
-
-1️⃣ GEOMETRY LOCK — PRESERVE ALL EXISTING GEOMETRY
-   • All parts and components: UNCHANGED in count, type, and position
-   • All dimensions: maintained within ±2%
-   • All proportions: exact reproduction from source
-   • All structural relationships: identical to source
-   • ZERO new parts may be added
-   • ZERO existing parts may be removed
-
-2️⃣ TOPOLOGY LOCK — PRESERVE ASSEMBLY STRUCTURE
-   • Component connections: unchanged
-   • Assembly relationships: exact reproduction
-   • Spatial arrangement: no repositioning allowed
-   • If parts touch in the input: they MUST touch in output
-   • If parts are separated: maintain exact gap
-
-3️⃣ REFINEMENT SCOPE — APPLY ONLY THE TARGETED CHANGE
-   • You MAY adjust: lighting, surface texture quality, clarity, detail enhancement
-   • You MAY improve: image sharpness, contrast, material appearance
-   • You CANNOT change: part geometry, assembly structure, orientation
-   • You CANNOT add: new parts, holes, features, text, branding
-   • You CANNOT remove: any existing visible component
-
-4️⃣ USER REFINEMENT DIRECTIVE (APPLY THIS ONLY):
-   "${refinementPrompt.trim()}"
-
-5️⃣ FIDELITY VERIFICATION BEFORE COMPLETION
-   ✓ Part count: IDENTICAL to input
-   ✓ Component types: UNCHANGED
-   ✓ Assembly structure: PRESERVED
-   ✓ Spatial relationships: MAINTAINED
-   ✓ Orientation: UNCHANGED (upright, centered)
-   ✓ ONLY the refinement directive applied, nothing more
-
-OUTPUT REQUIREMENTS:
-====================
-• One image only (no text responses)
-• Same aspect ratio as input
-• Clean, professional aesthetic
-• Pure white background (#FFFFFF)
-• Realistic contact shadow if appropriate
-• Zero artifacts or hallucinated elements
+    You are an expert AI 3D renderer and retoucher. Your task is to apply specific revisions to the provided image.
+    
+    CRITICAL INSTRUCTIONS:
+    1. RE-RENDER FROM SCRATCH: Continually refine the image by re-rendering it completely with the new user revisions applied. Make sure the output remains a flawless 3D commercial render.
+    2. ACT ON USER REVISIONS: ${refinementPrompt}
+    3. RETAIN BRANDING: ONLY preserve text, branding, or logos that actually exist in the reference image. Do NOT add new text or logos that aren't there. Keep any existing text crisp and clear like perfectly printed 3D decals.
+    4. PURE WHITE BACKGROUND: Always place the object on a perfect pure white background (#FFFFFF) with a realistic ground shadow.
+    5. PRISTINE QUALITY: Maintain standard commercial aesthetic, devoid of blur, artifacts, scratch lines, or real-world grime.
   `;
 
   const modelParams = MODEL_DEFAULTS[model];
-  
-  // ========================================================================
-  // TEMPERATURE FOR REFINEMENT
-  // Lower temp keeps refinement focused and prevents over-interpretation
-  // ========================================================================
-  const temperature = 0.25;
+  const temperature = 0.4;
 
   const refinePolicy: RetryPolicy = {
-    maxAttempts: 4, // Slightly increased for robustness
-    baseDelayMs: 1000,
-    maxDelayMs: 8000,
+    maxAttempts: 3,
+    baseDelayMs: 600,
+    maxDelayMs: 3000,
     backoffMultiplier: 2.0,
   };
 
   return withRetry(async (attempt) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    // Model escalation: Flash -> Pro -> 2.5 Flash
-    let currentModel: ModelVersion;
-    if (attempt === 1) {
-      currentModel = model;
-    } else if (attempt === 2 || attempt === 3) {
-      currentModel = "gemini-3-pro-image-preview";
-    } else {
-      currentModel = "gemini-2.5-flash-image";
-    }
+    const currentModel = attempt > 1 ? "gemini-2.5-flash-image" : model;
 
     console.info(
-      `[gemini] ${caller} — attempt ${attempt}/${refinePolicy.maxAttempts} | model=${currentModel} | temp=${temperature.toFixed(2)} | ratio=${targetAspectRatio}`
+      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | temp=${temperature.toFixed(2)} | mode=refine | ratio=${targetAspectRatio}`
     );
 
     const parts: any[] = [
@@ -1375,13 +1319,10 @@ OUTPUT REQUIREMENTS:
         parts,
       },
       config: {
-        imageConfig: {
-          imageSize,
-          aspectRatio: targetAspectRatio,
-        },
-        temperature, // Strict temperature for focused refinement
-        topP: 0.88,  // Slightly restricted for predictable refinement
-        topK: 25,    // Conservative sampling
+        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
+        temperature,
+        topP: modelParams.topP,
+        topK: modelParams.topK,
       },
     });
 
@@ -1389,29 +1330,12 @@ OUTPUT REQUIREMENTS:
     if (!candidate) {
       throw {
         code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates for refinement.",
+        message: "Gemini API returned zero candidates.",
         retryable: true,
       } satisfies AppError;
     }
 
-    if (candidate.finishReason === 'SAFETY') {
-      console.warn(`[gemini] ${caller} — attempt ${attempt} — content safety triggered during refinement`);
-    }
-
-    const { data, mimeType: outMime } = extractImageFromResponse(
-      candidate as Parameters<typeof extractImageFromResponse>[0]
-    );
-
-    if (!data || data.length < 1000) {
-      throw {
-        code: ErrorCode.NO_IMAGE_IN_RESPONSE,
-        message: `Refined image data suspiciously small (${data?.length ?? 0} bytes).`,
-        retryable: true,
-      } satisfies AppError;
-    }
-
-    console.info(`[gemini] ${caller} — attempt ${attempt} — refinement complete | size=${data.length} bytes`);
-
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
     return {
       imageUrl: `data:${outMime};base64,${data}`,
       aspectRatio: targetAspectRatio,

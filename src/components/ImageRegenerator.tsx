@@ -1,7 +1,7 @@
-import React, { useState, useRef, ChangeEvent } from 'react';
+import React, { useState, useRef } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { Upload, X, Loader2, Sparkles, Download, FolderOpen, RefreshCw, AlertCircle } from 'lucide-react';
+import { Upload, X, Loader2, Sparkles, Image as ImageIcon, Download, FolderOpen, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { regenerateImage, refineImage } from '../lib/gemini';
 import { AspectRatioOption, ImageSize, ModelVersion, ASPECT_RATIO_LABELS } from '../types';
 
@@ -54,7 +54,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
             const ext = filename.split('.').pop()?.toLowerCase();
             const mimeType = ext === 'jpg' ? 'jpeg' : ext;
             newItems.push({
-              id: Math.random().toString(36).substring(2, 11),
+              id: Math.random().toString(36).substr(2, 9),
               filename,
               originalDataUri: `data:image/${mimeType};base64,${base64}`,
               status: 'pending',
@@ -76,7 +76,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
       }
     }
 
-    setItems((prev: RegenerationItem[]) => [...prev, ...newItems]);
+    setItems((prev) => [...prev, ...newItems]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
@@ -86,7 +86,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
     setIsProcessing(true);
     setProgress(0);
 
-    const pendingItems = items.filter((item: RegenerationItem) => item.status === 'pending' || item.status === 'error');
+    const pendingItems = items.filter(item => item.status === 'pending' || item.status === 'error');
     
     // Creative mode is heavier, Clone mode is faster (lower temperature). Scale concurrency accordingly.
     const CONCURRENCY_LIMIT = mode === 'clone' ? 5 : 2;
@@ -94,7 +94,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
     let processedCount = 0;
     
     const processItem = async (item: RegenerationItem) => {
-      setItems((prev: RegenerationItem[]) => prev.map((p: RegenerationItem) => p.id === item.id ? { ...p, status: 'processing', error: undefined } : p));
+      setItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'processing', error: undefined } : p));
 
       try {
         const [mimeTypePrefix, base64Data] = item.originalDataUri.split(';base64,');
@@ -113,7 +113,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
         setItems(prev => prev.map(p => p.id === item.id ? { 
           ...p, 
           status: 'success', 
-          generatedDataUri: result.imageUrl,
+          generatedDataUri: result.imageUrl 
         } : p));
       } catch (error: any) {
         console.error(`Error processing ${item.filename}:`, error);
@@ -150,7 +150,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
   };
 
   const refineItem = async (id: string, prompt?: string) => {
-    const item = items.find((p: RegenerationItem) => p.id === id);
+    const item = items.find(p => p.id === id);
     if (!item?.generatedDataUri) return;
 
     setItems(prev => prev.map(p => p.id === id ? { ...p, status: 'processing', error: undefined } : p));
@@ -186,11 +186,11 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
 
   const downloadAll = async () => {
     const zip = new JSZip();
-    const successfulItems = items.filter((item: RegenerationItem) => item.status === 'success' && item.generatedDataUri);
+    const successfulItems = items.filter(item => item.status === 'success' && item.generatedDataUri);
     
     if (successfulItems.length === 0) return;
 
-    successfulItems.forEach((item: RegenerationItem) => {
+    successfulItems.forEach(item => {
       const base64Data = item.generatedDataUri!.split(',')[1];
       zip.file(item.filename, base64Data, { base64: true });
     });
@@ -207,7 +207,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col p-4 sm:p-8 overflow-y-auto">
-      <div className="max-w-7xl mx-auto w-full bg-neutral-900 border border-white/10 rounded-2xl flex flex-col shadow-2xl relative min-h-125 h-full max-h-[90vh]">
+      <div className="max-w-7xl mx-auto w-full bg-neutral-900 border border-white/10 rounded-2xl flex flex-col shadow-2xl relative min-h-[500px] h-full max-h-[90vh]">
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/5 bg-neutral-800/50">
@@ -253,7 +253,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 <label className="text-sm text-neutral-400 block mb-2">Model</label>
                 <select 
                   value={model}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setModel(e.target.value as ModelVersion)}
+                  onChange={(e) => setModel(e.target.value as ModelVersion)}
                   className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   disabled={isProcessing}
                 >
@@ -267,7 +267,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 <label className="text-sm text-neutral-400 block mb-2">Aspect Ratio</label>
                 <select 
                   value={aspectRatio}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setAspectRatio(e.target.value as AspectRatioOption)}
+                  onChange={(e) => setAspectRatio(e.target.value as AspectRatioOption)}
                   className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   disabled={isProcessing}
                 >
@@ -288,7 +288,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 <label className="text-sm text-neutral-400 block mb-2">Image Size</label>
                 <select 
                   value={imageSize}
-                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setImageSize(e.target.value as ImageSize)}
+                  onChange={(e) => setImageSize(e.target.value as ImageSize)}
                   className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   disabled={isProcessing}
                 >
@@ -303,7 +303,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                  <label className="text-sm text-neutral-400 block mb-2">Additional Instructions (Optional)</label>
                  <textarea 
                    value={customPrompt}
-                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setCustomPrompt(e.target.value)}
+                   onChange={(e) => setCustomPrompt(e.target.value)}
                    placeholder="e.g., Make it look like brushed aluminum, set in a dramatic studio light..."
                    className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 h-24 resize-none"
                    disabled={isProcessing}
@@ -362,7 +362,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
               </div>
               
               <div className="flex items-center gap-3">
-                {items.some((i: RegenerationItem) => i.status === 'success') && (
+                {items.some(i => i.status === 'success') && (
                   <button 
                     onClick={downloadAll}
                     disabled={isProcessing}
@@ -375,7 +375,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 
                 <button 
                   onClick={startBatch}
-                  disabled={isProcessing || items.filter((i: RegenerationItem) => i.status === 'pending' || i.status === 'error').length === 0}
+                  disabled={isProcessing || items.filter(i => i.status === 'pending' || i.status === 'error').length === 0}
                   className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-lg shadow-indigo-900/20 disabled:opacity-50"
                 >
                   {isProcessing ? (
@@ -410,7 +410,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {items.map((item: RegenerationItem) => (
+                  {items.map(item => (
                     <div key={item.id} className="bg-neutral-800 rounded-xl border border-white/5 overflow-hidden flex flex-col cursor-pointer group hover:border-indigo-500/50" onClick={() => { setSelectedItem(item); setRefinePrompt(''); }}>
                       <div className="aspect-square relative bg-neutral-900/50 border-b border-white/5">
                         <img 
@@ -426,7 +426,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                         {item.status === 'success' && (
                           <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button 
-                              onClick={(e: React.MouseEvent) => { e.stopPropagation(); refineItem(item.id); }}
+                              onClick={(e) => { e.stopPropagation(); refineItem(item.id); }}
                               className="bg-indigo-500 text-white p-1.5 rounded-full shadow-lg hover:bg-indigo-600 transition-colors"
                               title="Refine Image"
                             >
@@ -456,8 +456,8 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
         
         {/* Review Modal */}
         {selectedItem && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4" onClick={() => setSelectedItem(null)}>
-            <div className="max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4" onClick={() => setSelectedItem(null)}>
+            <div className="max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white">{selectedItem.filename}</h3>
                 <button onClick={() => setSelectedItem(null)} className="text-neutral-400 hover:text-white">
@@ -465,7 +465,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                 </button>
               </div>
               <div className={`relative aspect-auto max-h-[70vh] bg-neutral-900 border border-white/10 rounded-lg overflow-hidden shrink-0 grid ${selectedItem.generatedDataUri ? 'grid-cols-2 gap-px bg-white/10' : 'grid-cols-1'} items-center justify-center`}>
-                <div className="relative w-full h-full flex flex-col bg-black min-h-75">
+                <div className="relative w-full h-full flex flex-col bg-black min-h-[300px]">
                   {selectedItem.generatedDataUri && (
                     <div className="absolute top-2 left-2 z-10 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-xs font-medium text-white border border-white/10">Original</div>
                   )}
@@ -476,7 +476,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                   />
                 </div>
                 {selectedItem.generatedDataUri && (
-                  <div className="relative w-full h-full flex flex-col bg-black min-h-75">
+                  <div className="relative w-full h-full flex flex-col bg-black min-h-[300px]">
                     <div className="absolute top-2 left-2 z-10 bg-indigo-500/80 backdrop-blur-md px-2 py-1 rounded-md text-xs font-medium text-white border border-indigo-500/50">Regenerated</div>
                     <img 
                       src={selectedItem.generatedDataUri} 
@@ -491,7 +491,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                   <input 
                     type="text" 
                     value={refinePrompt} 
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setRefinePrompt(e.target.value)}
+                    onChange={(e) => setRefinePrompt(e.target.value)}
                     placeholder="Enter refinement instructions to fix this generated image..."
                     className="flex-1 bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-white"
                   />
@@ -507,7 +507,6 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
                   </button>
                 </div>
               )}
-
             </div>
           </div>
         )}
