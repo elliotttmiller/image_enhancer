@@ -1,8 +1,7 @@
 // gemini.ts
-// Production Grade — v3.0
+// Production Grade — v3.1
 // Elite prompt architecture, circuit-breaker resilience, precision generation
 
-import { Type, ThinkingLevel } from "@google/genai";
 import { GoogleGenAI } from "./vertex-client";
 import { SchematicExtractionSession } from "./SchematicExtractionSession";
 import {
@@ -33,7 +32,7 @@ export const rateLimit = async () => {
 };
 
 // ============================================================================
-// STYLE SYSTEM
+// PART 1: SCHEMATIC ENHANCER — STYLE SYSTEM & PROMPTS
 // ============================================================================
 
 export type SchematicStyle =
@@ -44,7 +43,9 @@ export type SchematicStyle =
   | "minimalist"
   | "isometric"
   | "vintage"
-  | "realistic";
+  | "realistic"
+  | "production"
+  | "hybrid-realism";
 
 export interface StyleDescriptor {
   /** Injected verbatim into the generation prompt */
@@ -57,8 +58,323 @@ export interface StyleDescriptor {
   temperatureDelta: number;
 }
 
+const STYLE_REGISTRY: Record<SchematicStyle, StyleDescriptor> = {
+  "hybrid-realism": {
+    label: "Hybrid CAD Realism",
+    temperatureDelta: -0.05, // Lower temp for extreme geometric precision
+    weight: 1.0,
+    prompt: `
+STYLE — Hybrid CAD Realism (Premium Exploded View):
+  • Target Aesthetic: High-end 3D CAD technical render (e.g., KeyShot technical mode or SolidWorks RealView).
+  • Material Realism: Semi-realistic. Apply accurate physical material properties (e.g., brushed aluminum, matte black anodized metal, glossy polymer, molded rubber) but keep them PERFECTLY CLEAN and pristine. 
+  • Prohibition: NO photographic noise, NO dirt, NO scratches, NO hyper-realistic micro-textures.
+  • Lighting: Soft, even studio global illumination. Smooth, perfect gradients on cylindrical and spherical surfaces. 
+  • Shadows: Subtle self-shadowing/ambient occlusion to show depth, but ZERO cast shadows on the background.
+  • Edges: Retain ultra-crisp, thin (1px) silhouette edges and form-break lines around components to preserve the strict "diagram" aesthetic.
+  • Background: STRICTLY pure white (#FFFFFF).`,
+  },
+
+  modern: {
+    label: "Modern CAD",
+    temperatureDelta: 0,
+    weight: 1.0,
+    prompt: `
+STYLE — Modern CAD Technical Drawing:
+  • Background: pure white (#FFFFFF), zero bleed.
+  • Stroke weights: outer contour 2–3 px, primary features 1–2 px, fine detail 0.5–1 px.
+  • Colour: monochrome black (#000000); optional single accent (#0055CC) for dimension arrows only.
+  • Shading: subtle ambient occlusion in recessed geometry only; no gradient fills.
+  • Aesthetic: ISO 128 / ASME Y14.3 compliant; professional engineering CAD output.`,
+  },
+
+  blueprint: {
+    label: "Blueprint",
+    temperatureDelta: 0,
+    weight: 1.0,
+    prompt: `
+STYLE — Classic Engineering Blueprint:
+  • Background: deep blueprint blue (#1A3A5C), uniform flat fill.
+  • Lines: crisp white (#FFFFFF), weight 1–2 px; hairlines at 0.5 px.
+  • Grid: 5 mm reference grid overlay at 15% white opacity.
+  • Contrast ratio: minimum 10:1 (WCAG AAA equivalent for technical drawings).`,
+  },
+
+  patent: {
+    label: "Patent Drawing",
+    temperatureDelta: -0.05,
+    weight: 1.0,
+    prompt: `
+STYLE — US Patent Office Illustration (37 CFR 1.84 compliant):
+  • Ink: solid black (#000000) ONLY — no grey, no gradients, no colour.
+  • Shading technique: parallel hatching at 45° (section views), stippling for curved surfaces.
+  • Line weights: outlines 0.35 mm, section lines 0.18 mm, centre lines 0.18 mm dashed.
+  • No decorative borders, logos, or non-standard annotation styles.`,
+  },
+
+  artistic: {
+    label: "Artistic Technical",
+    temperatureDelta: +0.1,
+    weight: 0.9,
+    prompt: `
+STYLE — Technical Art / Marker-Style Rendering:
+  • Line quality: varied stroke weight (0.5–4 px) for visual hierarchy and depth.
+  • Shading: warm marker-style gradients with hard-edge termination; avoid soft airbrush.
+  • Highlight: sharp white specular on radii and edges.
+  • Priority: mechanical accuracy preserved; artistic treatment is supplementary.`,
+  },
+
+  minimalist: {
+    label: "Minimalist",
+    temperatureDelta: -0.1,
+    weight: 1.0,
+    prompt: `
+STYLE — Minimalist Line Art:
+  • Background: pure white (#FFFFFF).
+  • Strokes: single weight, uniform 0.75 px, solid black (#000000).
+  • Zero shading, zero fills, zero gradients, zero textures.
+  • Geometry only: every non-essential decorative line removed.`,
+  },
+
+  isometric: {
+    label: "Isometric",
+    temperatureDelta: 0,
+    weight: 1.0,
+    prompt: `
+STYLE — True Isometric Technical Projection:
+  • Projection: 30° isometric (IEC 60617 dimetric variant acceptable for complex assemblies).
+  • Perspective distortion: strictly forbidden — all axes must be mathematically correct.
+  • Hidden lines: optional 0.25 px dashed grey (#BDBDBD).`,
+  },
+
+  vintage: {
+    label: "Vintage",
+    temperatureDelta: +0.05,
+    weight: 0.95,
+    prompt: `
+STYLE — Early 20th-Century Engineering Drawing:
+  • Background: aged cream / yellowed paper (#EDE5C8) with subtle irregular grain texture.
+  • Ink: warm sepia (#3D2B1A) with natural ink-spread variation (±5% stroke width).
+  • Imperfections: slight letter-press impression, minor ink bleed at intersections.`,
+  },
+
+  realistic: {
+    label: "Enhanced Realism",
+    temperatureDelta: +0.05,
+    weight: 0.90,
+    prompt: `
+STYLE — Enhanced Realistic Schematic (NOT a photograph):
+  • Target: A modernized, highly realistic technical diagram that clearly communicates physical materials while remaining a structural schematic.
+  • Materials: Apply realistic textures (e.g., brushed steel, matte rubber, glossy polymer) directly to the schematic geometry.
+  • Lighting: Single soft directional source from upper-left to give 3D volume to the diagram parts.
+  • Edges: Retain crisp 1-2 px silhouette lines on all parts to preserve the "diagram" aesthetic.
+  • PROHIBITED: Photography-style bokeh, HDR tone mapping, or removing the diagrammatic nature of the image.`,
+  },
+
+  production: {
+    label: "Production Illustration",
+    temperatureDelta: -0.05,
+    weight: 1.0,
+    prompt: `
+STYLE — Production-Grade Technical Illustration:
+  • Target aesthetic: SolidWorks "Technical Illustration" render mode — unambiguously 3D, unambiguously technical, never photographic.
+  • Geometry: ultra-precise line work — perfectly straight edges, perfect circles, consistent arc radii.
+  • Shading model: Lambert diffuse shading with a single overhead-left light source.
+  • Overall result: the illustration must be immediately recognisable as a professional technical drawing, not a 3D render and not a flat CAD print.`,
+  },
+};
+
+/**
+ * Canonical system role for SCHEMATICS.
+ */
+const SCHEMATIC_SYSTEM_ROLE = `You are a Principal Industrial Design Engineer and Senior Technical Illustrator with 25 years of experience.
+Your expertise spans mechanical assemblies, engineering drawing standards (ISO 128, ASME Y14.3), and CAD technical illustration.
+
+CRITICAL OUTPUT STANDARD:
+You are enhancing an original/old schematic diagram. You must output a highly realistic, modernized schematic diagram. 
+It must look like a premium technical illustration (e.g., SolidWorks Technical Render) — clearly 3D through precise shading, material-differentiated, geometrically exact — but NEVER a standard photograph. 
+Errors in geometry, missing parts, or missing/altered callouts are production defects and are completely unacceptable.`.trim();
+
+/** Quality tier system prompts */
+const QUALITY_DIRECTIVES: Record<OutputQuality, string> = {
+  standard:
+    "Output Quality: Standard. Balanced fidelity and generation speed. Acceptable minor geometric simplifications on sub-5mm features.",
+  high:
+    "Output Quality: High. Enhanced line precision, complete component inventory, sharp intersections. No visible approximations on any visible feature.",
+  maximum:
+    `Output Quality: Maximum — Production Ready.
+  VISUAL BENCHMARK: The output must be indistinguishable from a professional illustration produced by a senior technical artist.
+  GEOMETRY & PRECISION: Absolute perfection — every line straight, every circle perfect, every thread consistent. The exploded view layout MUST remain exactly as it is in the source image.
+  COMPLETENESS: Zero omissions. Every fastener, bearing, seal, and sub-component present.`,
+};
+
+function buildSchematicEnhancePrompt(
+  config: SchematicEnhancementConfig,
+  styleBlock: string,
+  labelDirective: string,
+  hasReferenceImages: boolean = false
+): string {
+  return `
+<ROLE>
+${SCHEMATIC_SYSTEM_ROLE}
+</ROLE>
+
+<INTERNAL_ANALYSIS>
+Step 1: INVENTORY - Mentally scan the input schematic. Count every distinct component, fastener, and structural member.
+Step 2: TOPOLOGY - Identify how components connect. Understand the assembly hierarchy and the exact exploded-view layout.
+Step 3: GEOMETRY - Note every circle, arc, angle, and symmetry axis.
+Step 4: ANNOTATION - Identify all callout bubbles, reference numbers, and leader lines. Identify all outer page borders, title blocks, and branding.
+Step 5: GENERATION PLAN - Re-draw the assembly at higher fidelity, preserving perfect geometry and callouts, while erasing all page-level branding.
+</INTERNAL_ANALYSIS>
+
+<PRIMARY_TASK>
+RE-ENGINEER and ENHANCE the schematic provided in the attached image.
+You are COMPLETELY RE-DRAWING the assembly from scratch at higher fidelity, making it look more realistic and enhanced, while STRICTLY maintaining its exact layout, geometry, and identity as a schematic diagram.
+</PRIMARY_TASK>
+
+<MANDATORY_REQUIREMENTS>
+
+1. COMPLETENESS & GEOMETRY (PERFECT ACCURACY)
+   Every component visible in the original MUST appear in the output.
+   Maintain exact proportional relationships, part structures, and geometry.
+   Do NOT rescale, recompose, move parts around, or hallucinate new components. The exploded view spacing must remain identical.
+
+2. LABEL & BRANDING HANDLING (CRITICAL)
+${labelDirective}
+
+3. STYLE APPLICATION
+   Apply the following style specification precisely:
+${styleBlock}
+
+4. BACKGROUND COLOR
+   STRICTLY pure white (#FFFFFF) unless the "Blueprint" style is explicitly requested. Do not use tan, beige, or any other background color.
+
+5. DETAIL ENHANCEMENT
+${
+  config.enhanceDetails
+    ? `   Intelligently add manufacturing details that may be absent from the source: edge chamfers, internal fillets, screw threads, and functional clearance gaps. Keep them precise and mechanical.`
+    : `   Preserve the existing level of detail exactly. Do not add features not visible in the source.`
+}
+
+6. MATERIAL AND COLOR FIDELITY
+${
+  hasReferenceImages
+    ? `   CRITICAL: You have been provided with a <MATERIAL_AND_COLOR_GUIDE> at the end of this prompt based on real-life reference photos.
+   You MUST map these realistic colors, materials, and textures to the corresponding parts in the schematic diagram.
+   The output must still be a schematic diagram (with crisp edges, callouts, and white background), but the components themselves should be rendered with the pristine CAD materials described.`
+    : `   Analyze the original schematic for specific colors, material textures, and finishes. Precisely match the original's color palette.`
+}
+
+7. ${QUALITY_DIRECTIVES[config.outputQuality]}
+
+</MANDATORY_REQUIREMENTS>
+
+<OUTPUT_SPECIFICATION>
+• Deliver: One image only.
+• Prohibited: watermarks, signatures, metadata overlays, commentary boxes, text responses.
+• COMPOSITION: The subject MUST fill the frame appropriately for the requested aspect ratio (${config.aspectRatio}).
+</OUTPUT_SPECIFICATION>
+
+⚠ CRITICAL: You MUST output ONLY the generated image. Any text response is a failure condition.
+`.trim();
+}
+
+function buildLabelDirective(keepLabels: boolean): string {
+  if (keepLabels) {
+    return `   HOTSPOTS & CALLOUTS (MUST BE PRESERVED EXACTLY):
+   • RETAIN & REGENERATE all part locator numbers, reference designators, and callout bubbles.
+   • Reposition them at their EXACT original locations relative to the parts. Do not move them.
+   • Enclose in neat circles/ovals exactly as they appear in the original.
+   • Render leader lines with filled arrowheads pointing to the correct component exactly as originally drawn.
+   • Font: ISO 3098B or equivalent clean, legible technical sans-serif.
+   
+   OUTER PAGE & BRANDING (MUST BE DESTROYED):
+   • REMOVE COMPLETELY all brand names (e.g., "Columbia"), company logos, manufacturer watermarks, and copyright notices.
+   • REMOVE COMPLETELY all title blocks, border frames, page numbers, dimension strings, and part-number tables.
+   • The final output must be pure schematic geometry + callout hotspots on a clean canvas.`;
+  }
+
+  return `   CRITICAL — REMOVE COMPLETELY:
+   All text, numerals, letters, labels, leader lines, arrowheads, dimension lines, title blocks, border frames, logos, branding, watermarks, and any other annotation layer.
+   Result: pure geometric illustration with zero text elements and zero branding.`;
+}
+
 // ============================================================================
-// CONFIGURATION CONTRACT
+// PART 2: IMAGE REGENERATOR — E-COMMERCE PRODUCT PROMPTS
+// ============================================================================
+
+const BASE_PRODUCT_PROMPT = `\
+You are an elite commercial product photographer and 3D rendering specialist producing \
+production-grade, high-end studio imagery for an industrial e-commerce store.
+
+The input image shows a single physical part, tool, or hardware component. \
+Your task is to generate a pristine, standalone product photograph that accurately represents \
+the physical object with ultra-premium production quality.
+
+CRITICAL DISTINCTION (ANTI-SCHEMATIC FIREWALL):
+This is a PRODUCT PHOTOGRAPH for an online store, NOT a schematic diagram.
+• DO NOT include any diagrammatic lines, dimensions, rulers, labels, leader lines, or text.
+• DO NOT include any borders, title blocks, or outer page details.
+• If the input image has text, numbers, or schematic elements, completely IGNORE AND REMOVE THEM.
+• Output ONLY the photorealistic physical object.
+
+OUTPUT STANDARD (APPLY TO ALL RENDERS):
+• Background: Pure white (#FFFFFF), infinite/seamless studio sweep. No gradients or vignettes.
+• Lighting: Professional e-commerce studio lighting. Soft directional key light from upper-left, secondary fill light, no harsh clipping.
+• Shadow: A realistic, subtle, sharp-edged contact shadow grounding the object to the surface.
+• Focus: Edge-to-edge sharp focus on the entire part. No depth-of-field blur.
+• Material Fidelity: Hyper-realistic physical textures (e.g., brushed steel, matte black oxide, glossy polymer, brass) at 4K-grade resolution.
+`;
+
+const CLONE_PRODUCT_PROMPT = `\
+${BASE_PRODUCT_PROMPT}
+
+MODE: PRECISION STUDIO RECREATION (1:1 CLONE)
+
+Recreate this part as a pristine new studio render that EXACTLY matches the \
+source image's camera angle, perspective, and spatial composition. \
+This is a fresh rendering that elevates production quality while preserving every physical characteristic.
+
+GEOMETRY & COMPOSITION:
+• Camera angle, elevation, and perspective: identical to source.
+• Object position and orientation within the frame: identical.
+• All structural features (holes, slots, threads, teeth, ridges): reproduced at their correct scale and 3D depth.
+
+PRODUCTION UPGRADES:
+• Material surface: sharper texture definition, accurate metallic/polymer reflections.
+• Lighting: cleaner, more dramatic studio key light revealing surface geometry.
+• Background: pristine seamless white with accurate soft contact shadow.
+`;
+
+const CREATIVE_PRODUCT_PROMPT = `\
+${BASE_PRODUCT_PROMPT}
+
+MODE: PREMIUM COMMERCIAL SHOWCASE (CREATIVE ANGLE)
+
+Transform this part into a stunning, high-end commercial 3D render. \
+The result must be a COMPLETELY NEW and UNIQUE professional showcase image that visually transcends the original snapshot.
+
+MANDATORY AESTHETIC TRANSFORMATIONS:
+• Camera Angle & Perspective: Shift the perspective significantly to show off the part's best features (e.g., rotate 15-35 degrees, isometric tilt). DO NOT trace or reuse the original 2D silhouette. 
+• Studio Lighting: Implement dramatic, cinematic studio lighting. Introduce striking directional light, bright edge-rim lighting, and soft-box reflections to make the form pop.
+• Drop Shadow: Gorgeous, soft-tapered commercial contact shadow on a pristine white background.
+
+MECHANICAL INTEGRITY (STRICT CONSTRAINTS):
+• Object Count: EXACTLY match the number of parts in the original (e.g., 1 part = 1 part. NO duplicates).
+• Core Dimensions: Maintain all accurate structural scale, hole placements, and 3D bends.
+• NO HALLUCINATED HARDWARE: Do NOT add any handles, mounts, extra bolts, or structural extensions that do not explicitly exist in the source image.
+`;
+
+function buildProductPrompt(
+  mode: 'creative' | 'clone',
+  customPrompt: string = ""
+): string {
+  const base = mode === 'clone' ? CLONE_PRODUCT_PROMPT : CREATIVE_PRODUCT_PROMPT;
+  if (!customPrompt.trim()) return base;
+  return `${base}\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt.trim()}`;
+}
+
+// ============================================================================
+// CONFIGURATION & TYPES
 // ============================================================================
 
 export interface SchematicEnhancementConfig {
@@ -80,514 +396,56 @@ export interface RetryPolicy {
   backoffMultiplier: number;
 }
 
-export interface GenerationResult {
-  dataUri: string;
-  mimeType: ImageMimeType;
-  metadata: Omit<GenerationMetadata, "durationMs" | "timestamp">;
-  durationMs: number;
-}
-
-// ============================================================================
-// STYLE REGISTRY
-// ============================================================================
-
-const STYLE_REGISTRY: Record<SchematicStyle, StyleDescriptor> = {
-  modern: {
-    label: "Modern CAD",
-    temperatureDelta: 0,
-    weight: 1.0,
-    prompt: `
-STYLE — Modern CAD Technical Drawing:
-  • Background: pure white (#FFFFFF), zero bleed
-  • Stroke weights: outer contour 2–3 px, primary features 1–2 px, fine detail 0.5–1 px
-  • Colour: monochrome black (#000000); optional single accent (#0055CC) for dimension arrows only
-  • Shading: subtle ambient occlusion in recessed geometry only; no gradient fills
-  • Typography: ISO 3098B sans-serif for any retained annotations
-  • Aesthetic: ISO 128 / ASME Y14.3 compliant; professional engineering CAD output`,
-  },
-
-  blueprint: {
-    label: "Blueprint",
-    temperatureDelta: 0,
-    weight: 1.0,
-    prompt: `
-STYLE — Classic Engineering Blueprint:
-  • Background: deep blueprint blue (#1A3A5C), uniform flat fill
-  • Lines: crisp white (#FFFFFF), weight 1–2 px; hairlines at 0.5 px
-  • Grid: 5 mm reference grid overlay at 15% white opacity
-  • Typography: condensed technical sans-serif, white, uppercase
-  • Contrast ratio: minimum 10:1 (WCAG AAA equivalent for technical drawings)
-  • Optional: subtle paper-fibre grain at 3% opacity for authenticity`,
-  },
-
-  patent: {
-    label: "Patent Drawing",
-    temperatureDelta: -0.05,
-    weight: 1.0,
-    prompt: `
-STYLE — US Patent Office Illustration (37 CFR 1.84 compliant):
-  • Background: off-white (#F8F8F2), simulating 21.6 × 27.9 cm patent paper
-  • Ink: solid black (#000000) ONLY — no grey, no gradients, no colour
-  • Shading technique: parallel hatching at 45° (section views), stippling for curved surfaces
-  • Cross-hatching: 2 mm line spacing at 90° for material sections
-  • Line weights: outlines 0.35 mm, section lines 0.18 mm, centre lines 0.18 mm dashed
-  • Leader lines: straight with closed arrowheads; reference numerals in 10 pt serif
-  • No decorative borders, logos, or non-standard annotation styles`,
-  },
-
-  artistic: {
-    label: "Artistic Technical",
-    temperatureDelta: +0.1,
-    weight: 0.9,
-    prompt: `
-STYLE — Technical Art / Marker-Style Rendering:
-  • Line quality: varied stroke weight (0.5–4 px) for visual hierarchy and depth
-  • Shading: warm marker-style gradients with hard-edge termination; avoid soft airbrush
-  • Colour palette: desaturated warm base (parchment, steel-grey) + 1–2 accent tones
-  • Highlight: sharp white specular on radii and edges
-  • Perspective: slight three-quarter view acceptable if it improves readability
-  • Priority: mechanical accuracy preserved; artistic treatment is supplementary`,
-  },
-
-  minimalist: {
-    label: "Minimalist",
-    temperatureDelta: -0.1,
-    weight: 1.0,
-    prompt: `
-STYLE — Minimalist Line Art:
-  • Background: pure white (#FFFFFF)
-  • Strokes: single weight, uniform 0.75 px, solid black (#000000)
-  • Zero shading, zero fills, zero gradients, zero textures
-  • Geometry only: every non-essential decorative line removed
-  • Whitespace: generous; components breathe within the frame
-  • Result: maximum clarity through radical simplification`,
-  },
-
-  isometric: {
-    label: "Isometric",
-    temperatureDelta: 0,
-    weight: 1.0,
-    prompt: `
-STYLE — True Isometric Technical Projection:
-  • Projection: 30° isometric (IEC 60617 dimetric variant acceptable for complex assemblies)
-  • Background: white (#FFFFFF) or very light grey (#F2F2F2)
-  • Colour coding: structural body in cool grey (#6B7280), moving/actuated parts in blue (#2563EB), critical/safety components in red (#DC2626), fluid/pneumatic in green (#16A34A)
-  • Strokes: uniform 1 px outlines, 0.5 px internal detail lines
-  • Perspective distortion: strictly forbidden — all axes must be mathematically correct
-  • Hidden lines: optional 0.25 px dashed grey (#BDBDBD)`,
-  },
-
-  vintage: {
-    label: "Vintage",
-    temperatureDelta: +0.05,
-    weight: 0.95,
-    prompt: `
-STYLE — Early 20th-Century Engineering Drawing:
-  • Background: aged cream / yellowed paper (#EDE5C8) with subtle irregular grain texture
-  • Ink: warm sepia (#3D2B1A) with natural ink-spread variation (±5% stroke width)
-  • Imperfections: slight letter-press impression, minor ink bleed at intersections — must look organic, not digitally uniform
-  • Typography: serif typeface (Clarendon or Century Schoolbook), mixed caps
-  • Title block: simple ruled border in sepia, manufacturer-era styling
-  • Authenticity range: 1900–1950 drafting table aesthetic`,
-  },
-
-  realistic: {
-    label: "Photorealistic",
-    temperatureDelta: +0.15,
-    weight: 0.85,
-    prompt: `
-STYLE — Photorealistic Technical Render:
-  • Renderer: PBR (Physically Based Rendering) output quality
-  • Materials: differentiate metal (brushed aluminium, anodised, cast iron), rubber seals (black, slight gloss), transparent components (glass/lexan with refraction), and polymer housings
-  • Lighting: three-point studio setup — key light at 45° elevation, fill at 0.4 intensity, rim light for edge separation
-  • Shadows: soft contact shadows; no hard-edged drop shadows
-  • Depth of field: minimal, all components in acceptable sharpness
-  • Tone mapping: neutral to slightly warm, avoid oversaturation
-  • Anti-aliasing: maximum quality; no aliased edges`,
-  },
-};
-
-// ============================================================================
-// PROMPT ARCHITECTURE
-// ============================================================================
-
-/**
- * Canonical system role injected at the top of every prompt.
- * Written using role-framing + expertise-signalling for best instruction-following.
- */
-const SYSTEM_ROLE = `You are a Principal Industrial Design Engineer and Senior Technical Illustrator with 25 years of experience across aerospace, automotive, and precision manufacturing. You hold deep expertise in:
-
-• Mechanical assemblies, tolerance stacks, and GD&T (ASME Y14.5)
-• Engineering drawing standards: ISO 128, ANSI Y14.2, DIN 199, ASME Y14.3
-• Technical illustration: isometric/orthographic projection, exploded views, section views
-• CAD systems: SolidWorks, CATIA V5, AutoCAD, Fusion 360 — you understand how they generate output
-• Material science, surface treatments, and manufacturing processes
-• Patent illustration: 37 CFR 1.84 and EPO drawing requirements
-
-Your outputs are used directly in production engineering documentation, patent filings, and ISO-certified technical manuals. Errors are unacceptable.`.trim();
-
-/**
- * Chain-of-thought preamble that forces systematic image analysis before generation.
- * This dramatically reduces omissions and geometric errors.
- */
-const ANALYSIS_CHAIN_OF_THOUGHT = `
-<INTERNAL_ANALYSIS — Execute before generating output>
-Step 1 — INVENTORY: Mentally scan the input image using a 4×4 grid overlay. List every distinct component in each cell. Count fasteners, moving parts, structural members.
-Step 2 — TOPOLOGY: Identify how components connect and constrain each other. Understand the assembly hierarchy (parent → child relationships).
-Step 3 — GEOMETRY: Note every circle, arc, angle, and symmetry axis. Flag any geometry that appears distorted in the source (will be corrected).
-Step 4 — ANNOTATION: Identify all labels, reference numbers, leader lines, dimension strings, title blocks.
-Step 5 — STYLE MAPPING: Confirm which style rules apply to this specific assembly type.
-Step 6 — GENERATION PLAN: Determine drawing order (background → major structure → sub-assemblies → fasteners → annotations).
-</INTERNAL_ANALYSIS>`.trim();
-
-/** Quality tier system prompts */
-const QUALITY_DIRECTIVES: Record<OutputQuality, string> = {
-  standard:
-    "Output Quality: Standard. Balanced fidelity and generation speed. Acceptable minor geometric simplifications on sub-5mm features.",
-  high:
-    "Output Quality: High. Enhanced line precision, complete component inventory, sharp intersections. No visible approximations on visible features.",
-  maximum:
-    "Output Quality: Maximum — Production Ready. Absolute geometric precision. Every fastener thread visible. Every chamfer and fillet present. Zero acceptable omissions. Output must be indistinguishable from a professional CAD rendering.",
-};
-
-/** Generate the complete system-level task prompt */
-function buildEnhancePrompt(
-  config: SchematicEnhancementConfig,
-  styleBlock: string,
-  labelDirective: string,
-  hasReferenceImages: boolean = false
-): string {
-  return `
-<ROLE>
-${SYSTEM_ROLE}
-</ROLE>
-
-${ANALYSIS_CHAIN_OF_THOUGHT}
-
-<PRIMARY_TASK>
-RE-ENGINEER the schematic provided in the attached image.
-
-You are NOT applying a filter. You are NOT cleaning up the image.
-You are COMPLETELY RE-DRAWING the assembly from scratch at higher fidelity, using your engineering knowledge to understand the geometry and reconstruct it with precision.
-
-Treat the input as reference material — extract all geometric and spatial information from it, then generate a superior technical illustration.
-</PRIMARY_TASK>
-
-<MANDATORY_REQUIREMENTS>
-
-1. COMPLETENESS — Non-negotiable
-   Every component visible in the original MUST appear in the output.
-   This includes: screws, bolts, washers, snap rings, springs, pins, ball bearings,
-   roller bearings, gear teeth, splines, keyways, seal grooves, O-ring glands,
-   chamfers, and every structural member regardless of size.
-   Use the 4×4 grid analysis (Step 1 above) to guarantee zero omissions.
-
-2. GEOMETRIC ACCURACY
-   • All lines that should be straight: perfectly straight
-   • All circles: perfect circles (not ovals) unless explicitly an ellipse in the design
-   • All parallel lines: verified parallel
-   • All perpendicular intersections: exactly 90°
-   • Gear teeth: consistent involute profile and uniform tooth count
-   • Threads: consistent helix pitch matching thread standard (UNC/UNF/M-series)
-
-3. ORIENTATION — Absolute requirement
-   Output MUST be upright. The primary assembly axis aligns with the vertical centre of the image.
-   Do NOT rotate, tilt, skew, or reframe.
-   Top of the assembly = top of the output image.
-   Centred both horizontally and vertically with consistent margins (≥5% of image dimension on all sides).
-
-4. LABEL HANDLING
-${labelDirective}
-
-5. STYLE APPLICATION
-   Apply the following style specification precisely. Where multiple styles are listed, blend them using the stated hierarchy:
-${styleBlock}
-${
-  config.styles.includes('modern') && config.styles.includes('artistic') && config.styles.includes('realistic')
-    ? `
-   SPECIAL STYLE BLEND — Realistic Modern Schematic:
-   - CRITICAL: Structural and Textural Fidelity.
-   - Analyze the original schematic's part structures, surface textures, and material finishes with absolute precision.
-   - The generated schematic MUST precisely replicate the original's part geometry, surface textures, and material properties.
-   - Use realistic colors and textures based on the original materials.
-   - Maintain technical schematic clarity.
-   - AVOID hyper-realistic rendering (no extreme PBR, no excessive gloss, no dramatic studio lighting).
-   - Aim for a clean, professional, and grounded technical illustration style.`
-    : ""
-}
-
-6. BACKGROUND COLOR
-   STRICTLY pure white (#FFFFFF). Regardless of the selected style, the background MUST be pure white. Do not use tan, beige, or any other background color.
-
-7. DETAIL ENHANCEMENT
-${
-  config.enhanceDetails
-    ? `   Intelligently add manufacturing details that may be absent from the source:
-   • Edge chamfers (0.5–2 mm range, appropriate to scale)
-   • Internal fillets at stress concentration points
-   • Screw thread representation on all visible fasteners
-   • Surface finish symbols where functionally significant
-   • Functional clearance gaps at mating interfaces
-   The result should look like a finished CAD model export, not a hand-traced sketch.`
-    : `   Preserve the existing level of detail exactly. Do not add or remove features not visible in the source.`
-}
-
-7. GEOMETRY PRESERVATION
-${
-  config.preserveGeometry
-    ? `   STRICTLY maintain exact proportional relationships, part structures, and geometry from the source image.
-   Correct errors (straighten lines, perfect circles) but do NOT rescale, recompose, or hallucinate new components.
-   Relative sizes, positions, and spatial relationships MUST be preserved to within 1% tolerance.
-   The output must be a pixel-perfect enhancement of the original structure.`
-    : `   Optimise proportions for visual clarity and compositional balance while keeping the design recognisable.`
-}
-
-8. MATERIAL AND COLOR FIDELITY
-${
-  hasReferenceImages
-    ? `   CRITICAL: You have been provided with a <MATERIAL_AND_COLOR_GUIDE> at the end of this prompt.
-   This guide describes the exact colors, material textures, and finishes of the real tool based on reference photos.
-   The generated schematic MUST precisely match the colors and materials described in the <MATERIAL_AND_COLOR_GUIDE>, not the black-and-white schematic.
-   Apply these realistic materials and colors to the corresponding parts in the schematic geometry.
-   STRICTLY maintain the original part structures from the schematic, but render them with the colors and materials from the guide.`
-    : `   Analyze the original schematic for specific colors, material textures, and finishes.
-   The generated schematic MUST precisely match the original's color palette and material representations.
-   Do not alter the color scheme or material appearance. 
-   STRICTLY maintain the original material textures and structures. Any enhancement must be applied to the existing parts without changing their fundamental identity, color, or material.`
-}
-
-9. CUSTOM DIRECTIVE
-${
-  config.customPrompt?.trim()
-    ? `   ${config.customPrompt.trim()}`
-    : `   None.`
-}
-
-10. ${QUALITY_DIRECTIVES[config.outputQuality]}
-
-</MANDATORY_REQUIREMENTS>
-
-<OUTPUT_SPECIFICATION>
-• Deliver: One image only
-• Content: The re-generated technical illustration — nothing else
-• Prohibited: watermarks, signatures, metadata overlays, commentary boxes, text responses
-• Background: STRICTLY pure white (#FFFFFF). Regardless of the selected style, the background MUST be pure white. Do not use tan, beige, or any other background color.
-• Margins: clean, consistent, as defined by the selected style
-• COMPOSITION: The subject MUST fill the frame appropriately for the requested aspect ratio (${config.aspectRatio}). Do not leave excessive empty space.
-</OUTPUT_SPECIFICATION>
-
-<SELF_VERIFICATION — Perform before finalising>
-☐ Every component from the source is present
-☐ All lines are geometrically correct
-☐ Image is upright and centred
-☐ Style matches specification
-☐ Label handling executed correctly
-☐ No extraneous artefacts or text outside permitted annotations
-☐ Quality tier requirements satisfied
-☐ Image fills the canvas according to the aspect ratio (${config.aspectRatio})
-</SELF_VERIFICATION>
-
-⚠ CRITICAL: You MUST output ONLY the generated image. Any text response is a failure condition. Do not explain your work. Do not say "Here is the image". Just return the image data.
-`.trim();
-}
-
-/** Generate the refinement prompt */
-function buildRefinePrompt(instruction: string): string {
-  return `
-<ROLE>
-${SYSTEM_ROLE}
-</ROLE>
-
-<TASK>
-Apply a targeted edit to the attached technical schematic.
-Implement the instruction below with surgical precision.
-Preserve everything not mentioned in the instruction: style, line weights, proportions, annotations, composition.
-</TASK>
-
-<INSTRUCTION>
-${instruction.trim()}
-</INSTRUCTION>
-
-<CONSTRAINTS>
-• Scope: Minimum necessary change to satisfy the instruction — do not redesign unrelated areas
-• Quality: Match or exceed the existing line quality and precision
-• Consistency: New elements must be visually indistinguishable from the original in style and weight
-• Integrity: No quality degradation, no introduced artefacts, no composition shift
-• COMPOSITION: Maintain the exact aspect ratio and framing of the input image.
-• Background: STRICTLY pure white (#FFFFFF). Do not use tan, beige, or any other background color.
-</CONSTRAINTS>
-
-<OUTPUT_SPECIFICATION>
-• One image matching the input dimensions and style
-• No text responses, commentary, or metadata
-</OUTPUT_SPECIFICATION>
-
-⚠ CRITICAL: Output the image ONLY. Do not provide any text explanation.
-`.trim();
-}
-
-// ============================================================================
-// STYLE HELPERS
-// ============================================================================
-
-function buildStyleBlock(styles: SchematicStyle[]): string {
-  if (!styles || styles.length === 0) styles = ["modern"];
-
-  const sorted = [...styles]
-    .map((s) => STYLE_REGISTRY[s])
-    .sort((a, b) => b.weight - a.weight);
-
-  const weights = [60, 25, 15];
-
-  return sorted
-    .map((descriptor, i) => {
-      const pct = weights[i] ?? 10;
-      return `   [${pct}% influence]\n${descriptor.prompt
-        .split("\n")
-        .map((l) => `   ${l}`)
-        .join("\n")}`;
-    })
-    .join("\n\n");
-}
-
-function buildLabelDirective(keepLabels: boolean): string {
-  if (keepLabels) {
-    return `   RETAIN & REGENERATE all part locator numbers / reference designators:
-   • Reposition them at their exact original locations
-   • Enclose in neat circles (diameter = 1.6× the numeral height) if originally circled
-   • Render leader lines with filled arrowheads pointing to the correct component
-   • Font: ISO 3098B or equivalent technical sans-serif
-   
-   CRITICAL — REMOVE COMPLETELY:
-   All brand names, company logos, manufacturer watermarks, copyright notices,
-   tool names, part-number tables, title blocks, border frames, 
-   general text descriptions, dimension strings.
-   
-   Result: part locators + leader lines + pure technical drawing, with ZERO branding.`;
-  }
-
-  return `   CRITICAL — REMOVE COMPLETELY:
-   All text, numerals, letters, labels, leader lines, arrowheads,
-   dimension lines, extension lines, centre-line marks, title blocks, border frames,
-   logos, branding, manufacturer watermarks, copyright notices, notes, revision blocks,
-   and any other annotation layer.
-   
-   Result: pure geometric illustration with zero text elements and zero branding.`;
-}
-
-// ============================================================================
-// MODEL CONFIGURATION
-// ============================================================================
-
-/**
- * Per-model generation parameters tuned for technical illustration output.
- * Lower temperature = more deterministic geometry.
- * Higher temperature = better artistic style blending.
- */
 const MODEL_DEFAULTS: Record<
   ModelVersion,
   { temperature: number; topP: number; topK: number }
 > = {
-  "gemini-3.1-flash-lite-preview": {
-    temperature: 0.65,
-    topP: 0.92,
-    topK: 40,
-  },
-  "gemini-3-flash-preview": {
-    temperature: 0.65,
-    topP: 0.92,
-    topK: 40,
-  },
-  "gemini-3.1-flash-image-preview": {
-    temperature: 0.65,
-    topP: 0.92,
-    topK: 40,
-  },
-  "gemini-3-pro-image-preview": {
-    temperature: 0.60,
-    topP: 0.90,
-    topK: 35,
-  },
-  "gemini-2.5-flash-image": {
-    temperature: 0.65,
-    topP: 0.92,
-    topK: 40,
-  },
+  "gemini-2.5-flash": { temperature: 0.55, topP: 0.90, topK: 32 },
+  "gemini-2.5-flash-image": { temperature: 0.50, topP: 0.88, topK: 32 },
+  "gemini-3.1-flash-image-preview": { temperature: 0.50, topP: 0.88, topK: 32 },
+  "gemini-3-pro-image-preview": { temperature: 0.52, topP: 0.88, topK: 32 },
 };
 
-function resolveTemperature(
+function getModelDefaults(model: string) {
+  if (MODEL_DEFAULTS[model as ModelVersion]) return MODEL_DEFAULTS[model as ModelVersion];
+  return model.includes('image') ? MODEL_DEFAULTS['gemini-2.5-flash-image'] : MODEL_DEFAULTS['gemini-2.5-flash'];
+}
+
+function resolveSchematicTemperature(
   model: ModelVersion,
   styles: SchematicStyle[],
   quality: OutputQuality
 ): number {
-  const base = MODEL_DEFAULTS[model].temperature;
-  const styleDelta = styles.reduce(
-    (acc, s) => acc + (STYLE_REGISTRY[s]?.temperatureDelta ?? 0),
-    0
-  ) / Math.max(styles.length, 1);
+  const base = getModelDefaults(model).temperature;
+  const styleDelta = styles.reduce((acc, s) => acc + (STYLE_REGISTRY[s]?.temperatureDelta ?? 0), 0) / Math.max(styles.length, 1);
   const qualityDelta = quality === "maximum" ? -0.10 : quality === "high" ? -0.05 : 0;
-
   return Math.max(0.1, Math.min(1.0, base + styleDelta + qualityDelta));
 }
 
 // ============================================================================
-// ERROR FACTORY
+// ERROR HANDLING & RETRY ENGINE
 // ============================================================================
 
 function classifyError(raw: unknown, attempt: number): AppError {
-  let msg: string;
-  if (raw instanceof Error) {
-    msg = raw.message;
-  } else if (typeof raw === "string") {
-    msg = raw;
-  } else if (typeof raw === "object" && raw !== null) {
-    try {
-      msg = JSON.stringify(raw);
-    } catch {
-      msg = String(raw);
-    }
-  } else {
-    msg = String(raw);
-  }
-  
+  let msg = raw instanceof Error ? raw.message : typeof raw === "string" ? raw : String(raw);
   const lc = msg.toLowerCase();
   
-  console.log(`[DEBUG] classifyError: Error message: ${msg}`);
-
-  const retryable = !(
-    lc.includes("api_key") ||
-    lc.includes("authentication") ||
-    lc.includes("billing") ||
-    lc.includes("permission")
-  );
-  
-  console.log(`[DEBUG] classifyError: Retryable: ${retryable}`);
-
+  const retryable = !(lc.includes("api_key") || lc.includes("authentication") || lc.includes("billing") || lc.includes("permission"));
   let code = ErrorCode.UNKNOWN;
   if (lc.includes("api_key") || lc.includes("api key")) code = ErrorCode.MISSING_API_KEY;
   else if (lc.includes("quota") || lc.includes("exhausted")) code = ErrorCode.QUOTA_EXCEEDED;
-  else if (lc.includes("billing"))                        code = ErrorCode.BILLING_REQUIRED;
-  else if (lc.includes("rate") || lc.includes("429"))     code = ErrorCode.RATE_LIMITED;
-  else if (lc.includes("timeout"))                        code = ErrorCode.TIMEOUT;
-  else if (lc.includes("network") || lc.includes("fetch"))code = ErrorCode.NETWORK_ERROR;
-  else if (lc.includes("no candidates"))                  code = ErrorCode.NO_CANDIDATES;
-  else if (lc.includes("text instead of image"))          code = ErrorCode.TEXT_RESPONSE;
-  else if (lc.includes("no image"))                       code = ErrorCode.NO_IMAGE_IN_RESPONSE;
-  else if (lc.includes("content") && lc.includes("filter"))code = ErrorCode.CONTENT_FILTERED;
+  else if (lc.includes("billing")) code = ErrorCode.BILLING_REQUIRED;
+  else if (lc.includes("rate") || lc.includes("429")) code = ErrorCode.RATE_LIMITED;
+  else if (lc.includes("timeout")) code = ErrorCode.TIMEOUT;
+  else if (lc.includes("network") || lc.includes("fetch")) code = ErrorCode.NETWORK_ERROR;
+  else if (lc.includes("no candidates")) code = ErrorCode.NO_CANDIDATES;
+  else if (lc.includes("text instead of image")) code = ErrorCode.TEXT_RESPONSE;
+  else if (lc.includes("no image")) code = ErrorCode.NO_IMAGE_IN_RESPONSE;
 
   return { code, message: msg, retryable, attempt, originalError: raw };
 }
 
-// ============================================================================
-// RETRY ENGINE — Exponential backoff with jitter
-// ============================================================================
-
-const DEFAULT_RETRY: RetryPolicy = {
-  maxAttempts: 5,
-  baseDelayMs: 800,
-  maxDelayMs: 10000,
-  backoffMultiplier: 2.0,
-};
+const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 800, maxDelayMs: 10000, backoffMultiplier: 2.0 };
 
 export async function withRetry<T>(
   fn: (attempt: number, model: string) => Promise<T>,
@@ -595,25 +453,16 @@ export async function withRetry<T>(
   policy: RetryPolicy = DEFAULT_RETRY
 ): Promise<T> {
   let lastError: AppError | null = null;
-
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
     const model = getModelForAttempt(attempt, modelType);
     try {
       return await fn(attempt, model);
     } catch (raw) {
       lastError = classifyError(raw, attempt);
-
       if (!lastError.retryable) throw lastError;
-
       if (attempt < policy.maxAttempts) {
         const jitter = Math.random() * 200;
-        const delay = Math.min(
-          policy.baseDelayMs * Math.pow(policy.backoffMultiplier, attempt - 1) + jitter,
-          policy.maxDelayMs
-        );
-        console.warn(
-          `[gemini] Attempt ${attempt}/${policy.maxAttempts} failed — ${lastError.code}. Retrying in ${Math.round(delay)}ms.`
-        );
+        const delay = Math.min(policy.baseDelayMs * Math.pow(policy.backoffMultiplier, attempt - 1) + jitter, policy.maxDelayMs);
         await new Promise<void>((r) => setTimeout(r, delay));
       }
     }
@@ -622,86 +471,42 @@ export async function withRetry<T>(
 }
 
 export function getModelForAttempt(attempt: number, type: 'text' | 'image' = 'text'): string {
-  const textModels = ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview"];
-  const imageModels = ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "gemini-2.5-flash-image"];
+  const textModels = ["gemini-2.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview"];
+  const imageModels = ["gemini-3.1-flash-image-preview", "gemini-2.5-flash-image", "gemini-3-pro-image-preview"];
   const models = type === 'text' ? textModels : imageModels;
   return models[Math.min(attempt - 1, models.length - 1)];
 }
 
-// ============================================================================
-// INPUT VALIDATION
-// ============================================================================
-
 function validateBase64Image(data: string, caller: string): void {
-  if (!data || typeof data !== "string") {
-    throw {
-      code: ErrorCode.INVALID_IMAGE,
-      message: `[${caller}] base64Image is null or not a string.`,
-      retryable: false,
-    } satisfies AppError;
-  }
-  if (data.length < 100) {
-    throw {
-      code: ErrorCode.INVALID_IMAGE,
-      message: `[${caller}] base64Image appears truncated (length: ${data.length}).`,
-      retryable: false,
-    } satisfies AppError;
+  if (!data || typeof data !== "string" || data.length < 100) {
+    throw { code: ErrorCode.INVALID_IMAGE, message: `[${caller}] Invalid base64Image.`, retryable: false } satisfies AppError;
   }
 }
 
 function validateApiKey(caller: string): void {
-  if (!process.env.GEMINI_API_KEY) {
-    throw {
-      code: ErrorCode.MISSING_API_KEY,
-      message: `[${caller}] GEMINI_API_KEY is not set. Call window.aistudio.openSelectKey() to configure.`,
-      retryable: false,
-    } satisfies AppError;
+  if (typeof console !== "undefined") {
+    // Client-side warning only; server handles actual auth.
   }
 }
 
-// ============================================================================
-// RESPONSE EXTRACTION
-// ============================================================================
-
-function extractImageFromResponse(candidate: {
-  content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string }; text?: string }> };
-  finishReason?: string;
-}): { data: string; mimeType: ImageMimeType } {
+function extractImageFromResponse(candidate: any): { data: string; mimeType: ImageMimeType } {
   const parts = candidate.content?.parts ?? [];
-
   for (const part of parts) {
     if (part.inlineData?.data) {
-      return {
-        data: part.inlineData.data,
-        mimeType: (part.inlineData.mimeType as ImageMimeType) ?? "image/png",
-      };
+      return { data: part.inlineData.data, mimeType: (part.inlineData.mimeType as ImageMimeType) ?? "image/png" };
     }
   }
-
-  const textPart = parts.find((p) => p.text);
+  const textPart = parts.find((p: any) => p.text);
   if (textPart?.text) {
-    const preview = textPart.text.substring(0, 400);
-    throw {
-      code: ErrorCode.TEXT_RESPONSE,
-      message: `Model returned a text response instead of an image: "${preview}…"`,
-      retryable: true,
-    } satisfies AppError;
+    throw { code: ErrorCode.TEXT_RESPONSE, message: `Text response instead of image.`, retryable: true } satisfies AppError;
   }
-
-  throw {
-    code: ErrorCode.NO_IMAGE_IN_RESPONSE,
-    message: `No image data in response. Finish reason: ${candidate.finishReason ?? "UNKNOWN"}`,
-    retryable: true,
-  } satisfies AppError;
+  throw { code: ErrorCode.NO_IMAGE_IN_RESPONSE, message: `No image data in response.`, retryable: true } satisfies AppError;
 }
 
 // ============================================================================
 // ASPECT RATIO DETECTION
 // ============================================================================
 
-/**
- * Uses a vision model to analyze the input image and determine the optimal aspect ratio.
- */
 export async function detectOptimalAspectRatio(
   base64Image: string,
   mimeType: string,
@@ -710,75 +515,43 @@ export async function detectOptimalAspectRatio(
   const caller = "detectOptimalAspectRatio";
   validateApiKey(caller);
 
-  // Use a vision-capable text model for analysis
-  const analysisModel = "gemini-3.1-pro-preview"; 
-
-  const isFlashImage = model === "gemini-3.1-flash-image-preview";
+  const analysisModel = "gemini-2.5-flash"; 
+  const isFlashImage = model === "gemini-2.5-flash-image";
 
   const prompt = `
-    Analyze the attached technical schematic diagram image.
-    Determine the optimal aspect ratio for a re-generated version of this image.
-    Consider the composition, the shape of the main subject, and the layout of annotations.
-    
-    Choose ONE of the following standard aspect ratios that best fits the content:
+    Analyze the attached image. Determine the optimal aspect ratio for a re-generated version.
+    Choose ONE of the following standard aspect ratios:
     - "1:1" (Square)
     - "3:4" (Portrait)
     - "4:3" (Landscape)
     - "9:16" (Tall)
     - "16:9" (Wide)
-    ${isFlashImage ? `
-    If the image is extremely wide or tall, you may choose:
-    - "1:4" (Narrow)
-    - "4:1" (Banner)
-    - "1:8" (Ultra-Narrow)
-    - "8:1" (Ultra-Wide)
-    ` : ""}
-    Return ONLY the aspect ratio string (e.g., "16:9"). Do not add any other text.
+    ${isFlashImage ? `\n    - "1:4" (Narrow)\n    - "4:1" (Banner)\n    - "1:8" (Ultra-Narrow)\n    - "8:1" (Ultra-Wide)` : ""}
+    Return ONLY the aspect ratio string (e.g., "16:9").
   `;
 
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    console.info(`[gemini] ${caller} — attempt ${attempt} | analyzing image for aspect ratio`);
-
+    const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: analysisModel,
-      contents: {
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Image } },
-        ],
-      },
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
     });
 
     const text = response.text?.trim();
-    
-    if (!text) {
-      throw new Error("No aspect ratio returned from analysis.");
-    }
+    if (!text) throw new Error("No aspect ratio returned.");
 
-    // Clean up response
     const match = text.match(/\b(\d+:\d+)\b/);
     const ratio = match ? match[1] as AspectRatio : "1:1";
     
-    // Validate against known ratios
     let validRatios: AspectRatio[] = ["1:1", "3:4", "4:3", "9:16", "16:9"];
-    if (isFlashImage) {
-      validRatios = [...validRatios, "1:4", "1:8", "4:1", "8:1"];
-    }
+    if (isFlashImage) validRatios = [...validRatios, "1:4", "1:8", "4:1", "8:1"];
     
-    if (validRatios.includes(ratio)) {
-      console.info(`[gemini] Detected optimal aspect ratio: ${ratio}`);
-      return ratio;
-    }
-    
-    console.warn(`[gemini] Invalid ratio returned: "${text}". Defaulting to 1:1.`);
-    return "1:1";
+    return validRatios.includes(ratio) ? ratio : "1:1";
   });
 }
 
 // ============================================================================
-// PUBLIC API — enhanceSchematic
+// PUBLIC API — SCHEMATIC ENHANCER
 // ============================================================================
 
 async function extractMaterialDescription(
@@ -789,15 +562,18 @@ async function extractMaterialDescription(
   const caller = "extractMaterialDescription";
   validateApiKey(caller);
 
-  const prompt = `You are an expert industrial designer and materials engineer.
-I am providing you with a black-and-white schematic diagram of a product, along with one or more reference photos of the actual real-world product.
+  const prompt = `You are an expert industrial designer.
+I am providing you with a black-and-white schematic diagram, along with reference photos of the real-world product.
+Analyze the reference photos and map the colors, materials, textures, and finishes to the corresponding parts in the schematic diagram.
 
-Your task is to analyze the reference photos and map the colors, materials, textures, and finishes to the corresponding parts in the schematic diagram.
+CRITICAL INSTRUCTION FOR CAD REALISM:
+Do NOT describe real-world imperfections. Ignore dirt, scratches, harsh photographic lighting, or uneven paint.
+Translate the real-world materials into pristine, "CAD-perfect" descriptions. 
+For example, instead of "scratched black metal with a bright glare", write "clean, matte black anodized aluminum".
+Instead of "dusty rubber handle", write "pristine, molded black rubber with a uniform matte finish".
 
-Please provide a highly detailed, part-by-part description of the materials and colors.
-For example: "The main outer housing is a matte dark grey textured plastic. The front nozzle is brushed aluminum. The trigger is bright red glossy plastic. The screws are black oxide steel."
-
-This description will be used to guide an AI image generator to colorize the schematic, so be as descriptive and precise as possible about the visual appearance of each component.`;
+Provide a highly detailed, part-by-part description of these pristine CAD materials. 
+This description will guide an AI to colorize the schematic components while keeping the image structurally a clean diagram.`;
 
   const parts: any[] = [
     { text: prompt },
@@ -812,29 +588,16 @@ This description will be used to guide an AI image generator to colorize the sch
   });
 
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    console.info(`[gemini] ${caller} — attempt ${attempt} | extracting material description using ${model}`);
-
-    try {
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: { parts },
-      });
-      return response.text || "Use realistic materials and colors.";
-    } catch (error) {
-      console.error(`[gemini] ${caller} attempt ${attempt} failed:`, error);
-      throw error;
-    }
-  }, 'text').catch(error => {
-    console.error("[gemini] All attempts failed for extractMaterialDescription:", error);
-    return "Use realistic materials and colors based on standard industrial design practices.";
-  });
+    const ai = new GoogleGenAI();
+    const response = await ai.models.generateContent({ model, contents: { parts } });
+    return response.text || "Use realistic, pristine CAD materials and colors.";
+  }, 'text').catch(() => "Use realistic, pristine CAD materials and colors based on standard industrial design practices.");
 }
 
 export async function enhanceSchematic(
   base64Image: string,
   mimeType: string,
-  styles: SchematicStyle[] = ["modern"],
+  styles: SchematicStyle[] = ["hybrid-realism"], // Default to the new precision style
   keepLabels: boolean = true,
   aspectRatio: AspectRatioOption = "1:1",
   imageSize: ImageSize = "1K",
@@ -846,114 +609,106 @@ export async function enhanceSchematic(
   referenceImages?: { url: string; mimeType: string }[]
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
   const caller = "enhanceSchematic";
-
-  // Validate
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
-  if (referenceImages && referenceImages.length > 0) {
-    referenceImages.forEach(ref => validateBase64Image(ref.url, caller));
-  }
+  if (referenceImages) referenceImages.forEach(ref => validateBase64Image(ref.url, caller));
 
-  // Normalise styles
   const resolvedStyles = normalizeStyles(styles);
-
-  // Handle Auto Aspect Ratio
-  let targetAspectRatio: AspectRatio;
-  if (aspectRatio === "auto") {
-    try {
-      targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
-    } catch (e) {
-      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
-      targetAspectRatio = "1:1";
-    }
-  } else {
-    targetAspectRatio = aspectRatio;
-  }
+  let targetAspectRatio: AspectRatio = aspectRatio === "auto" 
+    ? await detectOptimalAspectRatio(base64Image, mimeType, model).catch(() => "1:1" as AspectRatio)
+    : aspectRatio;
 
   const config: SchematicEnhancementConfig = {
-    styles: resolvedStyles,
-    keepLabels,
-    aspectRatio: targetAspectRatio,
-    imageSize,
-    model,
-    customPrompt,
-    preserveGeometry,
-    enhanceDetails,
-    outputQuality,
+    styles: resolvedStyles, keepLabels, aspectRatio: targetAspectRatio, imageSize, model, customPrompt, preserveGeometry, enhanceDetails, outputQuality,
   };
 
-  // Build prompt components
-  const styleBlock   = buildStyleBlock(resolvedStyles);
+  const styleBlock = buildStyleBlock(resolvedStyles);
   const labelDirective = buildLabelDirective(keepLabels);
-  const hasReferenceImages = referenceImages !== undefined && referenceImages.length > 0;
-  let prompt       = buildEnhancePrompt(config, styleBlock, labelDirective, hasReferenceImages);
+  const hasReferenceImages = !!(referenceImages && referenceImages.length > 0);
+  
+  let prompt = buildSchematicEnhancePrompt(config, styleBlock, labelDirective, hasReferenceImages);
 
   if (hasReferenceImages && referenceImages) {
     const materialDescription = await extractMaterialDescription(base64Image, mimeType, referenceImages);
-    prompt += `\n\n<MATERIAL_AND_COLOR_GUIDE>\nThe following is a detailed description of the materials, colors, and finishes extracted from the reference photos of the real product. You MUST use this description to accurately colorize and texture the schematic diagram:\n\n${materialDescription}\n</MATERIAL_AND_COLOR_GUIDE>`;
+    prompt += `\n\n<MATERIAL_AND_COLOR_GUIDE>\nThe following is a detailed description of the pristine CAD materials extracted from reference photos. You MUST apply these materials to the schematic components. The output MUST remain a precise technical schematic diagram (do not output a photograph), but colored and textured with these clean materials:\n\n${materialDescription}\n</MATERIAL_AND_COLOR_GUIDE>`;
   }
 
-  // Resolve temperature
-  const modelParams  = MODEL_DEFAULTS[model];
-  const temperature  = resolveTemperature(model, resolvedStyles, outputQuality);
+  if (customPrompt.trim()) {
+    prompt += `\n\n<CUSTOM_DIRECTIVE>\n${customPrompt.trim()}\n</CUSTOM_DIRECTIVE>`;
+  }
 
-  return withRetry(async (attempt, model) => {
-    // Re-initialise client on every attempt to guarantee fresh API key pickup
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const currentModel = model;
+  const modelParams = getModelDefaults(model);
+  const temperature = resolveSchematicTemperature(model, resolvedStyles, outputQuality);
 
-    console.info(
-      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | quality=${outputQuality} | styles=${resolvedStyles.join(",")} | ratio=${targetAspectRatio} | temp=${temperature.toFixed(2)}`
-    );
-
-    const parts: any[] = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Image } },
-    ];
-
-    const config: any = {
-      temperature,
-      topP: modelParams.topP,
-      topK: modelParams.topK,
-    };
-
-    if (currentModel.includes('image')) {
-      config.imageConfig = { imageSize, aspectRatio: targetAspectRatio };
-    }
-
+  return withRetry(async (attempt, currentModel) => {
+    const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: {
-        parts,
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      config: {
+        temperature, topP: modelParams.topP, topK: modelParams.topK,
+        ...(currentModel.includes('image') && { imageConfig: { imageSize, aspectRatio: targetAspectRatio } })
       },
-      config,
     });
 
     const candidate = response.candidates?.[0];
-    if (!candidate) {
-      throw {
-        code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates.",
-        retryable: true,
-      } satisfies AppError;
-    }
+    if (!candidate) throw { code: ErrorCode.NO_CANDIDATES, message: "Zero candidates.", retryable: true } satisfies AppError;
 
-    // Warn on unusual finish reasons but don't block extraction
-    const fr = candidate.finishReason;
-    if (fr && !["STOP", "MAX_TOKENS"].includes(fr)) {
-      console.warn(`[gemini] Finish reason: ${fr}`);
-    }
-
-    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
-    return {
-      imageUrl: `data:${outMime};base64,${data}`,
-      aspectRatio: targetAspectRatio
-    };
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate);
+    return { imageUrl: `data:${outMime};base64,${data}`, aspectRatio: targetAspectRatio };
   }, 'image');
 }
 
 // ============================================================================
-// PUBLIC API — refineSchematic
+// PUBLIC API — IMAGE REGENERATOR (E-COMMERCE)
+// ============================================================================
+
+export async function regenerateImage(
+  base64Image: string,
+  mimeType: string,
+  customPrompt: string = "",
+  aspectRatio: AspectRatioOption = "1:1",
+  imageSize: ImageSize = "1K",
+  model: ModelVersion = "gemini-3.1-flash-image-preview",
+  mode: 'creative' | 'clone' = 'creative'
+): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
+  const caller = "regenerateImage";
+  validateApiKey(caller);
+  validateBase64Image(base64Image, caller);
+
+  let targetAspectRatio: AspectRatio = aspectRatio === "auto" 
+    ? await detectOptimalAspectRatio(base64Image, mimeType, model).catch(() => "1:1" as AspectRatio)
+    : aspectRatio;
+
+  const prompt = buildProductPrompt(mode, customPrompt);
+  const modelParams = getModelDefaults(model);
+
+  // Clone requires minimal temperature for exact geometry match. Creative allows slight variance.
+  const temperature = mode === 'clone' ? 0.05 : 0.25;
+
+  const regeneratePolicy: RetryPolicy = { maxAttempts: 5, baseDelayMs: 3000, maxDelayMs: 15000, backoffMultiplier: 2.0 };
+
+  return withRetry(async (attempt, currentModel) => {
+    const ai = new GoogleGenAI();
+    const response = await ai.models.generateContent({
+      model: currentModel,
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      config: {
+        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
+        temperature, topP: modelParams.topP, topK: modelParams.topK,
+      },
+    });
+
+    const candidate = response.candidates?.[0];
+    if (!candidate) throw { code: ErrorCode.NO_CANDIDATES, message: "Zero candidates.", retryable: true } satisfies AppError;
+
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate);
+    return { imageUrl: `data:${outMime};base64,${data}`, aspectRatio: targetAspectRatio };
+  }, 'image', regeneratePolicy);
+}
+
+// ============================================================================
+// PUBLIC API — REFINEMENT & HOTSPOTS
 // ============================================================================
 
 export async function refineSchematic(
@@ -967,287 +722,43 @@ export async function refineSchematic(
   hotspots?: RawHotspot[]
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio; hotspots: RawHotspot[] }> {
   const caller = "refineSchematic";
-
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
-  if (referenceImages && referenceImages.length > 0) {
-    referenceImages.forEach(ref => validateBase64Image(ref.url, caller));
-  }
+  if (referenceImages) referenceImages.forEach(ref => validateBase64Image(ref.url, caller));
 
-  if (!instruction?.trim()) {
-    throw {
-      code: ErrorCode.EMPTY_INSTRUCTION,
-      message: `[${caller}] Refinement instruction cannot be empty.`,
-      retryable: false,
-    } satisfies AppError;
-  }
-
-  // Handle Auto Aspect Ratio
-  let targetAspectRatio: AspectRatio;
-  if (aspectRatio === "auto") {
-    try {
-      targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
-    } catch (e) {
-      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
-      targetAspectRatio = "1:1";
-    }
-  } else {
-    targetAspectRatio = aspectRatio;
-  }
+  let targetAspectRatio: AspectRatio = aspectRatio === "auto" 
+    ? await detectOptimalAspectRatio(base64Image, mimeType, model).catch(() => "1:1" as AspectRatio)
+    : aspectRatio;
 
   let prompt = `
-    You are an expert technical illustrator.
-    Refine the attached technical schematic image based on the following instruction:
+    You are an expert technical illustrator. Refine the attached schematic image based on this instruction:
     "${instruction}"
-
-    CRITICAL REQUIREMENTS:
-    1. Output ONLY the refined image. Do NOT output any text, markdown, or explanations.
-    2. Maintain the technical accuracy and style of the original.
-    3. Ensure the image fills the frame for the ${targetAspectRatio} aspect ratio.
-    4. Do not leave excessive empty space around the subject.
-    5. If the instruction implies a change in shape or layout, adapt the composition to fit the ${targetAspectRatio} frame perfectly.
+    CRITICAL: Output ONLY the refined image. Maintain the technical accuracy, callouts, and style of the original.
   `;
 
   if (referenceImages && referenceImages.length > 0) {
     const materialDescription = await extractMaterialDescription(base64Image, mimeType, referenceImages);
-    prompt += `\n\n<MATERIAL_AND_COLOR_GUIDE>\nThe following is a detailed description of the materials, colors, and finishes extracted from the reference photos of the real product. You MUST use this description to accurately colorize and texture the refined schematic diagram:\n\n${materialDescription}\n\nDO NOT generate or include the reference image itself inside the output. The output MUST ONLY be the refined schematic diagram, colored using the reference image as a guide.</MATERIAL_AND_COLOR_GUIDE>`;
+    prompt += `\n\n<MATERIAL_GUIDE>\nUse this pristine CAD material guide to accurately colorize the refined schematic:\n${materialDescription}\n</MATERIAL_GUIDE>`;
   }
 
-  const modelParams = MODEL_DEFAULTS[model];
-  // Lower temperature for surgical edits
+  const modelParams = getModelDefaults(model);
   const temperature = Math.max(0.1, modelParams.temperature - 0.15);
 
-  const refinePolicy: RetryPolicy = {
-    maxAttempts: 2,
-    baseDelayMs: 600,
-    maxDelayMs: 3000,
-    backoffMultiplier: 2.0,
-  };
-
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const currentModel = attempt > 1 ? "gemini-2.5-flash-image" : model;
-
-    console.info(
-      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | temp=${temperature.toFixed(2)} | ratio=${targetAspectRatio} | instruction="${instruction.substring(0, 60)}…"`
-    );
-
-    const parts: any[] = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Image } },
-    ];
-
+  return withRetry(async (attempt, currentModel) => {
+    const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: {
-        parts,
-      },
-      config: {
-        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
-        temperature,
-        topP: modelParams.topP,
-        topK: modelParams.topK,
-      },
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      config: { imageConfig: { imageSize, aspectRatio: targetAspectRatio }, temperature, topP: modelParams.topP, topK: modelParams.topK },
     });
 
     const candidate = response.candidates?.[0];
-    if (!candidate) {
-      throw {
-        code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates.",
-        retryable: true,
-      } satisfies AppError;
-    }
+    if (!candidate) throw { code: ErrorCode.NO_CANDIDATES, message: "Zero candidates.", retryable: true } satisfies AppError;
 
-    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
-    return {
-      imageUrl: `data:${outMime};base64,${data}`,
-      aspectRatio: targetAspectRatio,
-      hotspots: hotspots || []
-    };
-  }, 'image', refinePolicy);
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate);
+    return { imageUrl: `data:${outMime};base64,${data}`, aspectRatio: targetAspectRatio, hotspots: hotspots || [] };
+  }, 'image');
 }
-
-// ============================================================================
-// PROMPT ENGINEERING — regenerateImage
-// ============================================================================
-
-const BASE_PROMPT = `\
-You are a professional product photographer and 3D rendering specialist producing \
-commercial-grade studio imagery for an industrial e-commerce catalog.
-
-The reference image shows a physical part, tool, or hardware component. \
-Your task is to produce a new, standalone product photograph — not a visual copy \
-of the original, but a freshly rendered studio image that accurately represents \
-the same physical object with improved production quality.
-
-OUTPUT STANDARD (apply to all renders):
-• Background: pure white (#FFFFFF), infinite/seamless, no gradients or vignettes
-• Lighting: soft directional studio key light from upper-left, secondary fill light, no harsh clipping
-• Shadow: subtle, sharp-edged contact shadow grounding the object to the surface
-• Focus: full part in sharp focus — no depth-of-field blur anywhere on the subject
-• Surface fidelity: hyper-realistic material textures at 4K-grade resolution
-• Markings: reproduce only text, numbers, logos, or engravings that are unambiguously \
-visible in the source image — do not invent or add any markings
-`;
-
-const CLONE_PROMPT = `\
-${BASE_PROMPT}
-
-MODE: PRECISION STUDIO RECREATION
-
-Recreate this part as a pristine new studio render that exactly matches the \
-source image's camera angle, perspective, and spatial composition. \
-This is a fresh rendering — not a copy — that elevates production quality \
-while preserving every physical characteristic of the original.
-
-GEOMETRY & COMPOSITION — reproduce with exact fidelity:
-• Camera angle, elevation, and perspective: identical to source
-• Object position and orientation within the frame: identical
-• All structural features: holes, slots, teeth, bends, tabs, ridges, threads — \
-  each reproduced at their correct scale, spacing, and 3D depth
-• Proportional relationships between all features: unchanged
-
-PRODUCTION UPGRADES — improve these vs. the source:
-• Material surface: sharper texture definition, more pronounced grain or finish detail
-• Lighting: cleaner, more dramatic studio key light revealing surface geometry
-• Micro-detail: machined edges, fastener recesses, and surface texture at 4K sharpness
-• Background: pristine seamless white with accurate soft contact shadow
-• Overall tonality: richer, more saturated material presence
-`;
-
-const CREATIVE_PROMPT = `\
-${BASE_PROMPT}
-
-MODE: PREMIUM COMMERCIAL SHOWCASE
-
-You are an elite product photographer and 3D artist. Transform this part into a stunning, high-end commercial 3D render.
-The result must be a COMPLETELY NEW and UNIQUE professional showcase image that visually transcends the original snapshot.
-
-MANDATORY AESTHETIC TRANSFORMATIONS (DO NOT REPLICATE THE ORIGINAL):
-• Camera Angle & Perspective (CRITICAL): Shift the perspective significantly by rotating or tilting the object (e.g., 15-35 degrees). DO NOT trace or reuse the original 2D silhouette. The composition must look like an entirely different premium photograph.
-• Studio Lighting: Implement dramatic, cinematic studio lighting. Introduce striking directional light, bright edge-rim lighting, and soft-box reflections to make the form pop.
-• Drop Shadow: Replace any flat or messy shadows with a gorgeous, soft-tapered commercial contact shadow on a pristine white background.
-• Material Quality: Overhaul the flat surface into a photorealistic, premium industrial finish (while keeping the original general material class/color). Emphasize hyper-realistic micro-textures like bead-blasting, delicate directional brushing, or sleek anodizing.
-
-MECHANICAL INTEGRITY (QUANTITY & GEOMETRY LOCK):
-Even though the presentation is radically upgraded, the underlying physical engineering MUST remain accurate:
-• Object Count: EXACTLY match the number of parts in the original (e.g., 1 part = 1 part. NO duplicates).
-• Core Dimensions: Maintain all accurate structural scale, hole placements/diameters, slot dimensions, and 3D bends.
-• Volumetric Proportions: Preserve the thickness and depth of all physical features.
-
-HARD CONSTRAINTS (FIREWALL):
-• NO HALLUCINATED HARDWARE: Do NOT add any handles, rods, mounts, extra bolts, screws, flanges, or structural extensions that do not explicitly exist in the source image.
-• UNSEEN GEOMETRY: When rotating the part, do NOT invent complex or bizarre mechanisms for the newly exposed back/sides. Keep unseen geometry geometric, logical, and continuous with the known shape.
-• Do not add text, numbers, serial codes, or surface engravings that are not present in the source snapshot.
-`;
-
-function buildPrompt(
-  mode: 'creative' | 'clone',
-  customPrompt: string = ""
-): string {
-  const base = mode === 'clone' ? CLONE_PROMPT : CREATIVE_PROMPT;
-
-  if (!customPrompt.trim()) return base;
-
-  return `${base}
-
-ADDITIONAL INSTRUCTIONS FROM USER:
-${customPrompt.trim()}`;
-}
-
-// ============================================================================
-// PUBLIC API — regenerateImage
-// ============================================================================
-
-export async function regenerateImage(
-  base64Image: string,
-  mimeType: string,
-  customPrompt: string = "",
-  aspectRatio: AspectRatioOption = "1:1",
-  imageSize: ImageSize = "1K",
-  model: ModelVersion = "gemini-3.1-flash-image-preview",
-  mode: 'creative' | 'clone' = 'creative'
-): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
-  const caller = "regenerateImage";
-
-  validateApiKey(caller);
-  validateBase64Image(base64Image, caller);
-
-  // Handle Auto Aspect Ratio
-  let targetAspectRatio: AspectRatio;
-  if (aspectRatio === "auto") {
-    try {
-      targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
-    } catch (e) {
-      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
-      targetAspectRatio = "1:1";
-    }
-  } else {
-    targetAspectRatio = aspectRatio;
-  }
-
-  const prompt = buildPrompt(mode, customPrompt);
-
-  const modelParams = MODEL_DEFAULTS[model];
-
-  // Clone: minimal temperature — composition must be reproduced precisely.
-  // Creative: low but enough to calculate slight angle/perspective micro-shifts (0.25).
-  const temperature = mode === 'clone' ? 0.05 : 0.25;
-
-  const regeneratePolicy: RetryPolicy = {
-    maxAttempts: 5,
-    baseDelayMs: 3000,
-    maxDelayMs: 15000,
-    backoffMultiplier: 2.0,
-  };
-
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const currentModel = attempt > 1 ? "gemini-2.5-flash-image" : model;
-
-    console.info(
-      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | mode=${mode} | temp=${temperature.toFixed(2)} | ratio=${targetAspectRatio}`
-    );
-
-    const parts: any[] = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Image } },
-    ];
-
-    const response = await ai.models.generateContent({
-      model: currentModel,
-      contents: {
-        parts,
-      },
-      config: {
-        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
-        temperature,
-        topP: modelParams.topP,
-        topK: modelParams.topK,
-      },
-    });
-
-    const candidate = response.candidates?.[0];
-    if (!candidate) {
-      throw {
-        code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates.",
-        retryable: true,
-      } satisfies AppError;
-    }
-
-    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
-    return {
-      imageUrl: `data:${outMime};base64,${data}`,
-      aspectRatio: targetAspectRatio,
-    };
-  }, 'image', regeneratePolicy);
-}
-
-// ============================================================================
-// PUBLIC API — refineImage
-// ============================================================================
 
 export async function refineImage(
   base64Image: string,
@@ -1259,189 +770,78 @@ export async function refineImage(
   mode: 'creative' | 'clone' = 'creative'
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
   const caller = "refineImage";
-
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
   
-  if (!refinementPrompt || !refinementPrompt.trim()) {
-    throw new Error("A refinement prompt is required to apply revisions.");
-  }
-
-  // Handle Auto Aspect Ratio
-  let targetAspectRatio: AspectRatio;
-  if (aspectRatio === "auto") {
-    try {
-      targetAspectRatio = await detectOptimalAspectRatio(base64Image, mimeType, model);
-    } catch (e) {
-      console.error("[gemini] Failed to detect aspect ratio, defaulting to 1:1", e);
-      targetAspectRatio = "1:1";
-    }
-  } else {
-    targetAspectRatio = aspectRatio;
-  }
+  let targetAspectRatio: AspectRatio = aspectRatio === "auto" 
+    ? await detectOptimalAspectRatio(base64Image, mimeType, model).catch(() => "1:1" as AspectRatio)
+    : aspectRatio;
 
   const prompt = `
-    You are an expert AI 3D renderer and retoucher. Your task is to apply specific revisions to the provided image.
-    
-    CRITICAL INSTRUCTIONS:
-    1. RE-RENDER FROM SCRATCH: Continually refine the image by re-rendering it completely with the new user revisions applied. Make sure the output remains a flawless 3D commercial render.
-    2. ACT ON USER REVISIONS: ${refinementPrompt}
-    3. RETAIN BRANDING: ONLY preserve text, branding, or logos that actually exist in the reference image. Do NOT add new text or logos that aren't there. Keep any existing text crisp and clear like perfectly printed 3D decals.
-    4. PURE WHITE BACKGROUND: Always place the object on a perfect pure white background (#FFFFFF) with a realistic ground shadow.
-    5. PRISTINE QUALITY: Maintain standard commercial aesthetic, devoid of blur, artifacts, scratch lines, or real-world grime.
+    You are an expert AI 3D renderer and retoucher. Apply specific revisions to this product photograph.
+    REVISIONS: ${refinementPrompt}
+    CRITICAL: Maintain a pristine e-commerce product photography aesthetic. Pure white background (#FFFFFF). NO schematic lines or text.
   `;
 
-  const modelParams = MODEL_DEFAULTS[model];
+  const modelParams = getModelDefaults(model);
   const temperature = 0.4;
 
-  const refinePolicy: RetryPolicy = {
-    maxAttempts: 3,
-    baseDelayMs: 600,
-    maxDelayMs: 3000,
-    backoffMultiplier: 2.0,
-  };
-
-  return withRetry(async (attempt) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const currentModel = attempt > 1 ? "gemini-2.5-flash-image" : model;
-
-    console.info(
-      `[gemini] ${caller} — attempt ${attempt} | model=${currentModel} | temp=${temperature.toFixed(2)} | mode=refine | ratio=${targetAspectRatio}`
-    );
-
-    const parts: any[] = [
-      { text: prompt },
-      { inlineData: { mimeType, data: base64Image } },
-    ];
-
+  return withRetry(async (attempt, currentModel) => {
+    const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: {
-        parts,
-      },
-      config: {
-        imageConfig: { imageSize, aspectRatio: targetAspectRatio },
-        temperature,
-        topP: modelParams.topP,
-        topK: modelParams.topK,
-      },
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      config: { imageConfig: { imageSize, aspectRatio: targetAspectRatio }, temperature, topP: modelParams.topP, topK: modelParams.topK },
     });
 
     const candidate = response.candidates?.[0];
-    if (!candidate) {
-      throw {
-        code: ErrorCode.NO_CANDIDATES,
-        message: "Gemini API returned zero candidates.",
-        retryable: true,
-      } satisfies AppError;
-    }
+    if (!candidate) throw { code: ErrorCode.NO_CANDIDATES, message: "Zero candidates.", retryable: true } satisfies AppError;
 
-    const { data, mimeType: outMime } = extractImageFromResponse(candidate as Parameters<typeof extractImageFromResponse>[0]);
-    return {
-      imageUrl: `data:${outMime};base64,${data}`,
-      aspectRatio: targetAspectRatio,
-    };
-  }, 'image', refinePolicy);
+    const { data, mimeType: outMime } = extractImageFromResponse(candidate);
+    return { imageUrl: `data:${outMime};base64,${data}`, aspectRatio: targetAspectRatio };
+  }, 'image');
 }
 
-// ============================================================================
-// PUBLIC API — extractHotspots
-// ============================================================================
-
-export async function extractHotspots(
-  base64Image: string,
-  mimeType: string,
-): Promise<RawHotspot[]> {
+export async function extractHotspots(base64Image: string, mimeType: string): Promise<RawHotspot[]> {
   const caller = "extractHotspots";
-  console.log(`[DEBUG] ${caller}: Starting`);
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
 
-  const systemInstruction = `You are a precision optical engineering analyst specializing in technical schematic diagrams. Your classifications are consumed by downstream computer vision systems — accuracy is critical and errors cascade. Never guess. When uncertain, use the ambiguity fields provided.`;
-
-  const prompt = `Analyze this technical schematic diagram image carefully.
-
-TASK: Classify the visual structure of callout labels and leader lines in this diagram.
-
-CRITICAL INSTRUCTIONS FOR PRECISION:
-1. Bounding Box Format: [ymin, xmin, ymax, xmax] normalized to 0-1000.
-2. Pixel-Perfect Alignment: The bounding box MUST tightly enclose only the label text or the bubble containing the text. Do not include leader lines, arrows, or surrounding geometry.
-3. Completeness: Scan the entire image. Identify every single callout label.
-4. Verification: After identifying all labels, re-verify each bounding box against the image to ensure it is pixel-perfect. If a label is partially obscured, estimate the box as if it were fully visible.
-
-Output the result in the requested JSON format.`;
+  const systemInstruction = `You are a precision optical engineering analyst. Extract bounding boxes for all callout labels.`;
+  const prompt = `Analyze this schematic. Extract bounding boxes [ymin, xmin, ymax, xmax] normalized 0-1000 for every callout label/bubble.`;
 
   return withRetry(async (attempt, model) => {
-    console.log(`[DEBUG] ${caller}: Attempt ${attempt}`);
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-    console.info(`[gemini] ${caller} — attempt ${attempt} | extracting hotspots with high precision | model=${model}`);
-    console.log(`[DEBUG] ${caller}: Calling ai.models.generateContent`);
-
+    const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model,
-      contents: {
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Image } },
-        ],
-      },
+      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
       config: {
-        systemInstruction,
-        temperature: 0.2,
-        responseMimeType: "application/json",
+        systemInstruction, temperature: 0.2, responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
+          type: "array",
           items: {
-            type: Type.OBJECT,
+            type: "object",
             properties: {
-              label: {
-                type: Type.STRING,
-                description: "The exact text of the part number, label, or callout.",
-              },
-              box_2d: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.NUMBER,
-                },
-                description: "The precise bounding box [ymin, xmin, ymax, xmax] of the label/bubble itself, normalized 0-1000.",
-              },
-              confidence: {
-                type: Type.NUMBER,
-                description: "The confidence score for this detection (0.0 to 1.0).",
-              },
+              label: { type: "string" },
+              box_2d: { type: "array", items: { type: "number" } },
+              confidence: { type: "number" },
             },
             required: ["label", "box_2d", "confidence"],
           },
         },
       },
     });
-    console.log(`[DEBUG] ${caller}: ai.models.generateContent returned`);
 
     const text = response.text?.trim();
-    console.log(`[DEBUG] ${caller}: Received response text (length: ${text?.length})`);
-    if (!text) {
-      console.error(`[DEBUG] ${caller}: No text in response`);
-      throw new Error("No hotspots returned from analysis.");
-    }
-
-    try {
-      const parsed = JSON.parse(text);
-      console.log(`[DEBUG] ${caller}: Parsed ${parsed.length} hotspots`);
-      if (!Array.isArray(parsed)) {
-        throw new Error("Response is not an array");
-      }
-      return parsed.map((item: any) => ({
-        id: Math.random().toString(36).substr(2, 9),
-        label: item.label,
-        box_2d: item.box_2d,
-        part_box_2d: item.part_box_2d,
-        confidence: item.confidence,
-      })) as RawHotspot[];
-    } catch (e) {
-      console.error(`[DEBUG] ${caller}: Failed to parse JSON`, e);
-      throw new Error("Failed to parse hotspots JSON: " + (e instanceof Error ? e.message : String(e)));
-    }
+    if (!text) throw new Error("No hotspots returned.");
+    const parsed = JSON.parse(text);
+    return parsed.map((item: any) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      label: item.label,
+      box_2d: item.box_2d,
+      part_box_2d: item.part_box_2d,
+      confidence: item.confidence,
+    })) as RawHotspot[];
   }, 'text');
 }
 
@@ -1454,120 +854,71 @@ export async function refineHotspots(
   instruction: string = "Refine the hotspots."
 ): Promise<RawHotspot[]> {
   const caller = "refineHotspots";
-  console.log(`[DEBUG] ${caller}: Starting`);
   validateApiKey(caller);
   validateBase64Image(base64Image, caller);
 
-  const store = getHotspotMemoryStore(process.env.GEMINI_API_KEY!);
-  console.log(`[DEBUG] ${caller}: Calling store.refine`);
-  const result = await store.refine(base64Image, mimeType, instruction, currentHotspots);
-  console.log(`[DEBUG] ${caller}: store.refine returned ${result.length} hotspots`);
-  return result;
+  const store = getHotspotMemoryStore();
+  return await store.refine(base64Image, mimeType, instruction, currentHotspots);
 }
 
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
-/** Normalise styles input to a valid, deduplicated array */
-export function normalizeStyles(
-  input: SchematicStyle[] | SchematicStyle | undefined | null
-): SchematicStyle[] {
-  if (!input) return ["modern"];
-  const arr = Array.isArray(input) ? input : [input];
-  const valid = arr.filter((s) => s in STYLE_REGISTRY) as SchematicStyle[];
-  return valid.length > 0 ? [...new Set(valid)] : ["modern"];
+function buildStyleBlock(styles: SchematicStyle[]): string {
+  if (!styles || styles.length === 0) styles = ["hybrid-realism"];
+  const sorted = [...styles].map((s) => STYLE_REGISTRY[s]).sort((a, b) => b.weight - a.weight);
+  const weights = [60, 25, 15];
+  return sorted.map((descriptor, i) => `   [${weights[i] ?? 10}% influence]\n${descriptor.prompt.split("\n").map((l) => `   ${l}`).join("\n")}`).join("\n\n");
 }
 
-/** Human-readable style label */
+export function normalizeStyles(input: SchematicStyle[] | SchematicStyle | undefined | null): SchematicStyle[] {
+  if (!input) return ["hybrid-realism"];
+  const arr = Array.isArray(input) ? input : [input];
+  const valid = arr.filter((s) => s in STYLE_REGISTRY) as SchematicStyle[];
+  return valid.length > 0 ? [...new Set(valid)] : ["hybrid-realism"];
+}
+
 export function getStyleLabel(style: SchematicStyle): string {
   return STYLE_REGISTRY[style]?.label ?? style;
 }
 
-/** Human-readable style description for tooltips */
 export function getStyleDescription(style: SchematicStyle): string {
   const prompt = STYLE_REGISTRY[style]?.prompt ?? "";
-  // Extract first bullet as description
   const match = prompt.match(/•\s+(.+)/);
   return match ? match[1].trim() : style;
 }
 
-/** All available styles */
 export function getAvailableStyles(): SchematicStyle[] {
   return Object.keys(STYLE_REGISTRY) as SchematicStyle[];
 }
 
-/** Validate a configuration before sending to the API */
-export function validateConfig(
-  config: Partial<SchematicEnhancementConfig>
-): ValidationResult {
+export function validateConfig(config: Partial<SchematicEnhancementConfig>): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-
-  if (!config.styles || config.styles.length === 0) {
-    warnings.push("No styles specified — defaulting to 'modern'.");
-  } else {
+  if (!config.styles || config.styles.length === 0) warnings.push("No styles specified — defaulting to 'hybrid-realism'.");
+  else {
     const invalid = config.styles.filter((s) => !(s in STYLE_REGISTRY));
-    if (invalid.length > 0) {
-      errors.push(`Unknown styles: ${invalid.join(", ")}`);
-    }
-    if (config.styles.length > 3) {
-      warnings.push(
-        "More than 3 styles may produce inconsistent output. Recommend 1–3."
-      );
-    }
+    if (invalid.length > 0) errors.push(`Unknown styles: ${invalid.join(", ")}`);
+    if (config.styles.length > 3) warnings.push("More than 3 styles may produce inconsistent output.");
   }
-
-  if (config.customPrompt && config.customPrompt.length > 1000) {
-    warnings.push(
-      "Custom prompt exceeds 1000 characters; extremely long instructions may be partially ignored."
-    );
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
-/** Estimate processing complexity for a given configuration */
-export function estimateComplexity(
-  config: Partial<SchematicEnhancementConfig>
-): ProcessingComplexity {
-  let score = 0;
-  score += (config.styles?.length ?? 1) * 2;
+export function estimateComplexity(config: Partial<SchematicEnhancementConfig>): ProcessingComplexity {
+  let score = (config.styles?.length ?? 1) * 2;
   score += config.outputQuality === "high" ? 3 : config.outputQuality === "maximum" ? 6 : 1;
   score += config.customPrompt && config.customPrompt.trim().length > 0 ? 2 : 0;
   score += config.enhanceDetails ? 2 : 0;
   score += config.preserveGeometry ? 1 : 0;
-
-  if (score <= 6)  return "low";
+  if (score <= 6) return "low";
   if (score <= 12) return "medium";
   return "high";
 }
 
-/** Estimated latency in seconds (rough heuristic for UI hints) */
-export function estimateLatencySeconds(
-  model: ModelVersion,
-  imageSize: ImageSize,
-  quality: OutputQuality
-): number {
-  const base: Record<ModelVersion, number> = {
-    "gemini-3.1-flash-lite-preview": 4,
-    "gemini-3-flash-preview": 6,
-    "gemini-3.1-flash-image-preview": 8,
-    "gemini-3-pro-image-preview":     18,
-    "gemini-2.5-flash-image":         10,
-  };
-  const sizeMultiplier: Record<ImageSize, number> = {
-    "512px": 0.6, "1K": 1.0, "2K": 1.8, "4K": 3.2,
-  };
-  const qualityMultiplier: Record<OutputQuality, number> = {
-    standard: 1.0, high: 1.3, maximum: 1.7,
-  };
-
-  return Math.round(
-    base[model] * sizeMultiplier[imageSize] * qualityMultiplier[quality]
-  );
+export function estimateLatencySeconds(model: ModelVersion, imageSize: ImageSize, quality: OutputQuality): number {
+  const base: Record<ModelVersion, number> = { "gemini-2.5-flash-image": 20, "gemini-3.1-flash-image-preview": 20, "gemini-3-pro-image-preview": 22, "gemini-2.5-flash": 8 };
+  const sizeMultiplier: Record<ImageSize, number> = { "512px": 0.6, "1K": 1.0, "2K": 1.8, "4K": 3.2 };
+  const qualityMultiplier: Record<OutputQuality, number> = { standard: 1.0, high: 1.3, maximum: 1.7 };
+  return Math.round(base[model] * sizeMultiplier[imageSize] * qualityMultiplier[quality]);
 }

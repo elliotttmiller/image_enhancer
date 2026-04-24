@@ -6,7 +6,8 @@ export class GoogleGenAI {
   constructor(opts?: any) {
     this.models = {
       generateContent: async (req: any) => {
-        const response = await fetch('/api/vertex/generate', {
+  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api';
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/vertex/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)

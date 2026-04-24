@@ -50,11 +50,10 @@ export type AspectRatioOption = AspectRatio | "auto";
 export type ImageSize = "512px" | "1K" | "2K" | "4K";
 
 export type ModelVersion =
-  | "gemini-3.1-flash-lite-preview"
-  | "gemini-3-flash-preview"
+  | "gemini-2.5-flash-image"
   | "gemini-3.1-flash-image-preview"
   | "gemini-3-pro-image-preview"
-  | "gemini-2.5-flash-image";
+  | "gemini-2.5-flash";
 
 export type OutputQuality = "standard" | "high" | "maximum";
 
@@ -448,11 +447,10 @@ export const IMAGE_SIZE_LABELS: Record<ImageSize, string> = {
 };
 
 export const MODEL_LABELS: Record<ModelVersion, string> = {
-  "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite (Fast)",
-  "gemini-3-flash-preview": "Gemini 3 Flash (Standard)",
-  "gemini-3.1-flash-image-preview": "Gemini 3.1 Flash  (Fast)",
-  "gemini-3-pro-image-preview":     "Gemini 3 Pro      (Precision)",
-  "gemini-2.5-flash-image":         "Gemini 2.5 Flash  (Fallback)",
+  "gemini-2.5-flash-image": "Gemini 2.5 Flash Image  (Image Generation)",
+  "gemini-3.1-flash-image-preview": "Gemini 3.1 Flash Image Preview",
+  "gemini-3-pro-image-preview": "Gemini 3 Pro Image Preview",
+  "gemini-2.5-flash":       "Gemini 2.5 Flash  (Text / Analysis)",
 };
 
 export const QUALITY_LABELS: Record<OutputQuality, string> = {

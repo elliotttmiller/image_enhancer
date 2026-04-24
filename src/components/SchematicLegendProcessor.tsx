@@ -356,7 +356,11 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
                       <div className="flex items-center gap-2">
                         {file.status === 'processing' && <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />}
                         {file.status === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
-                        {file.status === 'error' && <AlertCircle className="w-5 h-5 text-red-500" title={file.error} />}
+                        {file.status === 'error' && (
+                          <span title={file.error}>
+                            <AlertCircle className="w-5 h-5 text-red-500" aria-hidden />
+                          </span>
+                        )}
                         <span className="text-sm capitalize text-neutral-400 mr-2">
                           {file.status === 'error' ? 'Error' : file.status}
                         </span>

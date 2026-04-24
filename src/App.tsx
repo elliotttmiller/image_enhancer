@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Upload, Sparkles, ArrowRight, Download, RefreshCw, AlertCircle, Image as ImageIcon, Key, Plus, FolderOpen, Trash2, ArrowLeft, Grid, Settings2, Wand2, Cpu, MessageSquare, Eye, EyeOff, List, Copy, Check, ChevronDown, FileText, X } from "lucide-react";
-import { enhanceSchematic, refineSchematic, extractHotspots, refineHotspots, SchematicStyle } from "./lib/gemini";
+import { motion } from "motion/react";
+import { Upload, Sparkles, Download, RefreshCw, AlertCircle, Image as ImageIcon, Key, Plus, FolderOpen, Trash2, ArrowLeft, Grid, Settings2, Wand2, Cpu, MessageSquare, Eye, EyeOff, List, Copy, Check, ChevronDown, FileText, X } from "lucide-react";
+import { enhanceSchematic, refineSchematic, extractHotspots, refineHotspots, type SchematicStyle } from "./lib/gemini";
 import { convertPdfToImage } from "./lib/pdf-utils";
-import { Project, AspectRatio, AspectRatioOption, ImageSize, ModelVersion, GeneratedImage, ASPECT_RATIO_LABELS, Hotspot, RawHotspot } from "./types";
+import { Project, AspectRatioOption, ImageSize, GeneratedImage, ASPECT_RATIO_LABELS, Hotspot } from "./types";
 import { BatchProcessor } from "./components/BatchProcessor";
 import { SchematicLegendProcessor } from "./components/SchematicLegendProcessor";
 import { auditAndUpdateJson } from "./lib/schematic-legend-processor";
@@ -11,6 +11,24 @@ import { WorkflowPipeline } from "./components/WorkflowPipeline";
 import { ImageRegenerator } from "./components/ImageRegenerator";
 
 export default function App() {
+  const AVAILABLE_STYLES: SchematicStyle[] = [
+    "modern",
+    "blueprint",
+    "patent",
+    "artistic",
+    "minimalist",
+    "isometric",
+    "vintage",
+    "realistic",
+    "production",
+    "hybrid-realism",
+  ];
+
+  const formatStyleLabel = (style: SchematicStyle) =>
+    style
+      .split("-")
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
   // Global State
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -18,7 +36,7 @@ export default function App() {
   
   // Editor State (derived from current project or local state for new uploads)
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isBatchProcessorOpen, setIsBatchProcessorOpen] = useState(false);
+  const [isBatchProcessorOpen] = useState(false);
   const [isSchematicLegendProcessorOpen, setIsSchematicLegendProcessorOpen] = useState(false);
   const [isWorkflowPipelineOpen, setIsWorkflowPipelineOpen] = useState(false);
   const [isImageRegeneratorOpen, setIsImageRegeneratorOpen] = useState(false);
@@ -315,7 +333,7 @@ export default function App() {
           );
           
           newGeneratedImages.push({
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
             aspectRatio: result.aspectRatio,
             imageUrl: result.imageUrl,
             createdAt: Date.now()
@@ -823,7 +841,7 @@ export default function App() {
                         alt={project.name}
                         className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-neutral-900/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="absolute inset-0 bg-linear-to-t from-neutral-900/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2">
@@ -832,7 +850,7 @@ export default function App() {
                             {project.name}
                           </h3>
                           <p className="text-xs text-neutral-500 mt-1">
-                            {new Date(project.createdAt).toLocaleDateString()} • {project.styles?.join(", ") || "modern"}
+                            {new Date(project.createdAt).toLocaleDateString()} • {project.styles?.map(formatStyleLabel).join(", ") || "Modern"}
                           </p>
                         </div>
                         <button
@@ -893,7 +911,7 @@ export default function App() {
                   </div>
 
                   {/* Reference Image Card */}
-                  {currentProject.workflowType !== "refine" && currentProject.workflowType !== "extract" && (
+                  {currentProject.workflowType !== "refine" && (
                     <div className="bg-neutral-800/30 rounded-2xl border border-white/5 overflow-hidden">
                       <div className="p-4 border-b border-white/5 flex items-center justify-between bg-neutral-800/50">
                         <h3 className="text-sm font-medium text-neutral-400 uppercase tracking-wider">
@@ -916,7 +934,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <div className="p-6 flex flex-col items-center justify-center bg-neutral-900/30 min-h-[160px]">
+                      <div className="p-6 flex flex-col items-center justify-center bg-neutral-900/30 min-h-40">
                         {currentProject.referenceImages && currentProject.referenceImages.length > 0 ? (
                           <div className="flex flex-wrap gap-4 justify-center w-full">
                             {currentProject.referenceImages.map((ref, idx) => (
@@ -966,7 +984,6 @@ export default function App() {
                   )}
 
                   {/* Controls Card */}
-                  {currentProject.workflowType !== "extract" && (
                     <div className="bg-neutral-800/30 rounded-2xl border border-white/5 p-6 space-y-6">
                       
                       {/* Model Selection */}
@@ -975,29 +992,29 @@ export default function App() {
                           <Cpu className="w-3 h-3" /> AI Model
                         </h4>
                         <div className="grid grid-cols-2 gap-2">
-                          <button
+                            <button
                             onClick={() => updateProject(currentProject.id, { model: "gemini-3.1-flash-image-preview" })}
                             className={`px-3 py-2 rounded-lg text-sm font-medium transition-all border ${
                               currentProject.model === "gemini-3.1-flash-image-preview"
-                                ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
-                                : 'bg-neutral-700/50 border-transparent text-neutral-400 hover:bg-neutral-700'
+                              ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
+                              : 'bg-neutral-700/50 border-transparent text-neutral-400 hover:bg-neutral-700'
                             }`}
-                          >
-                            Gemini 3.0 Flash
-                          </button>
+                            >
+                            Gemini 3.1 Flash Preview
+                            </button>
                           <button
-                            onClick={() => updateProject(currentProject.id, { model: "gemini-3-pro-image-preview" })}
+                            onClick={() => updateProject(currentProject.id, { model: "gemini-2.5-flash-image" })}
                             className={`px-3 py-2 rounded-lg text-sm font-medium transition-all border ${
-                              currentProject.model === "gemini-3-pro-image-preview"
+                              currentProject.model === "gemini-2.5-flash-image"
                                 ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
                                 : 'bg-neutral-700/50 border-transparent text-neutral-400 hover:bg-neutral-700'
                             }`}
                           >
-                            Gemini 3.0 Pro
+                            Gemini 2.5 Flash Image
                           </button>
                         </div>
                         <p className="text-xs text-neutral-500 mt-2">
-                          Use "Pro" for complex, dense schematics. "Flash" is faster for standard diagrams.
+                          Use Gemini 3.1 Flash Preview for best quality. Gemini 2.5 Flash Image is available as a fallback.
                         </p>
                       </div>
 
@@ -1009,7 +1026,7 @@ export default function App() {
                               <Sparkles className="w-3 h-3" /> Generation Style (Select Multiple)
                             </h4>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {(['modern', 'blueprint', 'patent', 'artistic', 'minimalist', 'isometric', 'vintage', 'realistic'] as const).map((style) => {
+                              {AVAILABLE_STYLES.map((style) => {
                                 const isSelected = currentProject.styles?.includes(style);
                                 return (
                                   <button
@@ -1032,7 +1049,7 @@ export default function App() {
                                         : 'bg-neutral-700/50 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200'
                                     }`}
                                   >
-                                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                                      {formatStyleLabel(style)}
                                   </button>
                                 );
                               })}
@@ -1084,7 +1101,7 @@ export default function App() {
                               <div className="grid grid-cols-2 gap-2">
                                 {([
                                   "auto", "1:1", "3:4", "4:3", "9:16", "16:9",
-                                  ...(currentProject.model === "gemini-3.1-flash-image-preview" ? ["1:4", "4:1", "1:8", "8:1"] : [])
+                                  ...(currentProject.model === "gemini-2.5-flash-image" ? ["1:4", "4:1", "1:8", "8:1"] : [])
                                 ] as AspectRatioOption[]).map((ratio) => {
                                   const isSelected = currentProject.aspectRatios?.includes(ratio);
                                   return (
@@ -1127,7 +1144,7 @@ export default function App() {
                                 <option value="4:3">{ASPECT_RATIO_LABELS["4:3"]}</option>
                                 <option value="9:16">{ASPECT_RATIO_LABELS["9:16"]}</option>
                                 <option value="16:9">{ASPECT_RATIO_LABELS["16:9"]}</option>
-                                {currentProject.model === "gemini-3.1-flash-image-preview" && (
+                                {currentProject.model === "gemini-2.5-flash-image" && (
                                   <>
                                     <option value="1:4">{ASPECT_RATIO_LABELS["1:4"]}</option>
                                     <option value="4:1">{ASPECT_RATIO_LABELS["4:1"]}</option>
@@ -1145,7 +1162,7 @@ export default function App() {
                               onChange={(e) => updateProject(currentProject.id, { imageSize: e.target.value as ImageSize })}
                               className="w-full bg-neutral-700/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
-                              {currentProject.model === "gemini-3.1-flash-image-preview" && (
+                              {currentProject.model === "gemini-2.5-flash-image" && (
                                 <option value="512px">Fast (512px)</option>
                               )}
                               <option value="1K">Standard (1K)</option>
@@ -1181,8 +1198,7 @@ export default function App() {
                         </>
                       )}
                     </div>
-                  )}
-                </div>
+                  </div>
                 )}
 
                 {currentProject.workflowType === "extract" && (
@@ -1263,7 +1279,7 @@ export default function App() {
                     </div>
 
                     {/* Hotspots List Card */}
-                    <div className="bg-neutral-800/30 rounded-2xl border border-white/5 overflow-hidden flex flex-col max-h-[600px]">
+                    <div className="bg-neutral-800/30 rounded-2xl border border-white/5 overflow-hidden flex flex-col max-h-150">
                       <div className="p-4 border-b border-white/5 flex items-center justify-between bg-neutral-800/50">
                         <h3 className="text-sm font-medium text-neutral-400 uppercase tracking-wider flex items-center gap-2">
                           <List className="w-3 h-3" /> Hotspots ({currentProject.hotspots?.length || 0})
@@ -1322,7 +1338,7 @@ export default function App() {
 
                 {/* Right Panel: Enhanced Output */}
                 <div className={`space-y-4 ${currentProject.workflowType === "extract" ? "lg:col-span-2" : ""}`}>
-                  <div className="bg-neutral-800/30 rounded-2xl border border-white/5 overflow-hidden h-full min-h-[300px] sm:min-h-[500px] flex flex-col">
+                  <div className="bg-neutral-800/30 rounded-2xl border border-white/5 overflow-hidden h-full min-h-75 sm:min-h-125 flex flex-col">
                     <div className="p-4 border-b border-white/5 flex items-center justify-between bg-neutral-800/50">
                       <h3 className="text-sm font-medium text-indigo-400 uppercase tracking-wider">
                         {currentProject.workflowType === "extract" ? "Diagram" : currentProject.workflowType === "refine" ? "Refined Output" : "Enhanced Output"}
@@ -1560,11 +1576,11 @@ export default function App() {
                     <div className="flex-1 p-6 flex flex-col items-center justify-center bg-neutral-900/30 relative">
                       {currentProject.enhancedImage ? (
                         <>
-                          <div id="image-container" className="relative inline-block max-w-full max-h-[400px] mb-4 touch-none" style={{ lineHeight: 0 }}>
+                          <div id="image-container" className="relative inline-block max-w-full max-h-100 mb-4 touch-none" style={{ lineHeight: 0 }}>
                             <img 
                               src={currentProject.generatedImages?.find(img => img.id === selectedImageId)?.imageUrl || currentProject.enhancedImage || null} 
                               alt="Enhanced" 
-                              className={`max-w-full max-h-[400px] w-auto h-auto shadow-2xl transition-opacity ${isProcessing ? 'opacity-50' : 'opacity-100'}`}
+                              className={`max-w-full max-h-100 w-auto h-auto shadow-2xl transition-opacity ${isProcessing ? 'opacity-50' : 'opacity-100'}`}
                               style={{ objectFit: 'contain' }}
                               draggable={false}
                             />
@@ -1623,7 +1639,7 @@ export default function App() {
                                   <button
                                     key={img.id}
                                     onClick={() => setSelectedImageId(img.id)}
-                                    className={`relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                                    className={`relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
                                       selectedImageId === img.id 
                                         ? 'border-indigo-500 ring-2 ring-indigo-500/20' 
                                         : 'border-white/10 hover:border-white/30 opacity-60 hover:opacity-100'

@@ -40,10 +40,11 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
     pdfScale: 3.0,
     enableEnhancement: true,
     enhancementStyles: ['blueprint'],
+    enhancementStyle: 'blueprint', // Added this line
     enhancementKeepLabels: true,
     enhancementAspectRatio: '1:1',
     enhancementImageSize: '1K',
-    enhancementModel: 'gemini-3.1-flash-image-preview',
+  enhancementModel: 'gemini-3.1-flash-image-preview',
     enhancementCustomPrompt: '',
     enhancementPreserveGeometry: true,
     enhancementEnhanceDetails: true,
@@ -477,7 +478,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
               id: hotspot.label,
               x_pct: xmin_pct + width_pct / 2,
               y_pct: ymin_pct + height_pct / 2,
-              shape: hotspot.shape || 'rectangle',
+              shape: (hotspot as any).shape || 'rectangle',
               pageNumber: 1,
               rotation: 0
             };
@@ -535,7 +536,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex bg-black/80 backdrop-blur-xl">
+    <div className="fixed inset-0 z-70 flex bg-black/80 backdrop-blur-xl">
       <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full h-full bg-neutral-900/80 shadow-2xl border-x border-white/10">
         {/* Header */}
         <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
@@ -777,7 +778,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                           <div>
                             <label className="block text-sm font-medium text-neutral-300 mb-2">Enhancement Styles</label>
                             <div className="grid grid-cols-2 gap-2">
-                              {['modern', 'blueprint', 'patent', 'artistic', 'minimalist', 'isometric', 'vintage', 'realistic'].map((style) => (
+                              {['modern', 'blueprint', 'patent', 'artistic', 'minimalist', 'isometric', 'vintage', 'realistic', 'production', 'hybrid-realism'].map((style) => (
                                 <label key={style} className="flex items-center space-x-2 text-sm text-neutral-300 cursor-pointer">
                                   <input
                                     type="checkbox"
@@ -832,7 +833,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                                 onChange={(e) => setConfig(prev => ({ ...prev, enhancementModel: e.target.value as ModelVersion }))}
                                 className="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                               >
-                                <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image</option>
+                                <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Preview</option>
                                 <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image</option>
                                 <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
                               </select>
@@ -953,7 +954,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                         {(file.status === 'processing' || file.status === 'success') && (
                           <div className="h-1.5 bg-neutral-900">
                             <div 
-                              className={`h-full transition-all duration-500 ${file.status === 'success' ? 'bg-emerald-500' : file.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'}`}
+                              className={`h-full transition-all duration-500 ${file.status === 'success' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
                               style={{ width: `${file.progress}%` }}
                             />
                           </div>
@@ -996,7 +997,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                         {(file.status === 'processing' || file.status === 'success') && file.pages && file.pages.length > 0 && (
                           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {file.pages.map((page, idx) => (
-                              <div key={idx} className="relative group rounded-xl overflow-hidden bg-black/40 border border-white/5 aspect-[3/4] flex items-center justify-center">
+                              <div key={idx} className="relative group rounded-xl overflow-hidden bg-black/40 border border-white/5 aspect-3/4 flex items-center justify-center">
                                 {/* Background Image */}
                                 {page.enhancedImage || page.originalImage ? (
                                   <img 
@@ -1007,7 +1008,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                                 ) : null}
                                 
                                 {/* Overlay Info */}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-4">
+                                <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-4">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-bold text-white bg-black/50 px-2 py-1 rounded backdrop-blur-md">
                                       Page {page.index + 1}
@@ -1045,8 +1046,8 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                                   preserveAspectRatio="none"
                                 >
                                   {file.correlatedData?.find(c => c.schematicPageIndex === page.index)?.hotspots.map((h, hIdx) => {
-                                    if (h.polygon_2d && h.polygon_2d.length > 0) {
-                                      const points = h.polygon_2d.map(([y, x]) => `${x},${y}`).join(' ');
+                                    if ((h as any).polygon_2d && (h as any).polygon_2d.length > 0) {
+                                      const points = (h as any).polygon_2d.map(([y, x]) => `${x},${y}`).join(' ');
                                       return (
                                         <polygon
                                           key={hIdx}
@@ -1061,7 +1062,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
                                       const width = xmax - xmin;
                                       const height = ymax - ymin;
                                       
-                                      if (h.shape === 'circle') {
+                                      if ((h as any).shape === 'circle') {
                                         return (
                                           <ellipse
                                             key={hIdx}

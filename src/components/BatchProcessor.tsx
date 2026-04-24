@@ -36,7 +36,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
   const [refinePrompt, setRefinePrompt] = useState('');
   const [selectedItem, setSelectedItem] = useState<BatchItem | null>(null);
 
-  const styleOptions: SchematicStyle[] = ['modern', 'blueprint', 'patent', 'artistic', 'minimalist', 'isometric', 'vintage', 'realistic'];
+  const styleOptions: SchematicStyle[] = ['modern', 'blueprint', 'patent', 'artistic', 'minimalist', 'isometric', 'vintage', 'realistic', 'production', 'hybrid-realism'];
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -269,7 +269,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
                   className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                   disabled={isProcessing}
                 >
-                  <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image</option>
+                  <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Preview</option>
                   <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image</option>
                   <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
                 </select>
@@ -535,7 +535,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
         
         {/* Review Modal */}
         {selectedItem && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4" onClick={() => setSelectedItem(null)}>
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4" onClick={() => setSelectedItem(null)}>
             <div className="max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white">{selectedItem.filename}</h3>

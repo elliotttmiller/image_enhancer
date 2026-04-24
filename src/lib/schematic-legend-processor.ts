@@ -1,4 +1,5 @@
-import { Type } from "@google/genai";
+// Avoid importing the server-only `@google/genai` runtime in files that may
+// be bundled for the browser. Use JSON Schema string literals instead.
 import { GoogleGenAI } from "./vertex-client";
 import { withRetry } from "./gemini";
 import { STAGE_2_SYSTEM, STAGE_4_SYSTEM, STAGE_6_SYSTEM } from "./prompts";
@@ -49,7 +50,7 @@ Classify the page type as either 'SCHEMATIC', 'LEGEND', or 'OTHER'.
 Return ONLY a JSON object with a single key "type" containing one of the three string values.`;
 
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI();
     
     const response = await ai.models.generateContent({
       model,
@@ -62,10 +63,10 @@ Return ONLY a JSON object with a single key "type" containing one of the three s
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "object",
           properties: {
             type: {
-              type: Type.STRING,
+              type: "string",
               enum: ['SCHEMATIC', 'LEGEND', 'OTHER']
             }
           },
@@ -94,10 +95,10 @@ Return a JSON array of objects, each with:
 - 'quantity': the quantity indicated (number, default to 1 if not specified)`;
 
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI();
     
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
@@ -107,13 +108,13 @@ Return a JSON array of objects, each with:
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
+          type: "array",
           items: {
-            type: Type.OBJECT,
+            type: "object",
             properties: {
-              rawText: { type: Type.STRING },
-              cleanLabel: { type: Type.STRING },
-              quantity: { type: Type.NUMBER }
+              rawText: { type: "string" },
+              cleanLabel: { type: "string" },
+              quantity: { type: "number" }
             },
             required: ["rawText", "cleanLabel", "quantity"]
           }
@@ -127,7 +128,7 @@ Return a JSON array of objects, each with:
 
 export async function extractSchematicData(base64Image: string, mimeType: string): Promise<ExtractedHotspot[]> {
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI();
     
     // Stage 2: Style Classifier
     const stage2Response = await ai.models.generateContent({
@@ -147,26 +148,26 @@ export async function extractSchematicData(base64Image: string, mimeType: string
     const stage2Meta = JSON.parse(stage2Response.text || "{}");
 
     const hotspotSchema = {
-      type: Type.ARRAY,
+      type: "array",
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          id: { type: Type.STRING, description: "A unique identifier for this hotspot" },
-          label: { type: Type.STRING, description: "The text of the callout label" },
+          id: { type: "string", description: "A unique identifier for this hotspot" },
+          label: { type: "string", description: "The text of the callout label" },
           box_2d: {
-            type: Type.ARRAY,
-            items: { type: Type.NUMBER },
+            type: "array",
+            items: { type: "number" },
             description: "The bounding box [ymin, xmin, ymax, xmax] normalized to 0-1000"
           },
           polygon_2d: {
-            type: Type.ARRAY,
+            type: "array",
             items: {
-              type: Type.ARRAY,
-              items: { type: Type.NUMBER }
+              type: "array",
+              items: { type: "number" }
             },
             description: "An array of [y, x] points normalized to 0-1000 that trace the exact outline of the hotspot shape."
           },
-          shape: { type: Type.STRING, description: "The geometric shape of the component ('rectangle', 'square', 'circle', 'hexagon', 'triangle', etc.)" }
+          shape: { type: "string", description: "The geometric shape of the component ('rectangle', 'square', 'circle', 'hexagon', 'triangle', etc.)" }
         },
         required: ["id", "label", "box_2d", "shape"]
       }
@@ -174,7 +175,7 @@ export async function extractSchematicData(base64Image: string, mimeType: string
 
     // Stage 4: Per-Crop OCR
     const stage4Response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
@@ -192,7 +193,7 @@ export async function extractSchematicData(base64Image: string, mimeType: string
 
     // Stage 6: Full-Image QA
     const stage6Response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-2.5-flash-image",
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
@@ -224,7 +225,7 @@ export async function auditAndUpdateJson(base64Image: string, mimeType: string, 
     
     Return ONLY the mapping JSON object.`;
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model,
       contents: {
@@ -279,7 +280,7 @@ Extract the table mapping the callout labels to their part names/descriptions, p
 Return a JSON array of objects, each with 'label' (the callout number/code), 'description' (the part name/description), 'quantity' (as a number), and optionally 'partNumber'.`;
 
   return withRetry(async (attempt, model) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI();
     
     const response = await ai.models.generateContent({
       model,
@@ -292,14 +293,14 @@ Return a JSON array of objects, each with 'label' (the callout number/code), 'de
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
+          type: "array",
           items: {
-            type: Type.OBJECT,
+            type: "object",
             properties: {
-              label: { type: Type.STRING },
-              description: { type: Type.STRING },
-              partNumber: { type: Type.STRING },
-              quantity: { type: Type.NUMBER }
+              label: { type: "string" },
+              description: { type: "string" },
+              partNumber: { type: "string" },
+              quantity: { type: "number" }
             },
             required: ["label", "description"]
           }

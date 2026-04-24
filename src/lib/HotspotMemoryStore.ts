@@ -1,15 +1,13 @@
-import { Type } from "@google/genai";
+// Use JSON Schema string literals here to avoid bundling server SDKs into the client.
 import { GoogleGenAI } from "./vertex-client";
 import { RawHotspot } from "../types";
 import { drawHotspotsOnImage } from "./hotspotOverlay";
 
 export class HotspotMemoryStore {
   private history: any[] = [];
-  private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model: string = "gemini-3.1-flash-lite-preview") {
-    this.apiKey = apiKey;
+  constructor(model: string = "gemini-2.5-flash-image") {
     this.model = model;
   }
 
@@ -35,7 +33,8 @@ Existing Hotspots (JSON): ${JSON.stringify(currentHotspots)}
 
 Output ONLY the refined list in the requested JSON format. Do not generate any images or any other content.`;
 
-    const ai = new GoogleGenAI({ apiKey: this.apiKey });
+  // Use frontend shim which proxies to server; do not embed client-side API keys.
+  const ai = new GoogleGenAI();
     console.log("[DEBUG] HotspotMemoryStore.refine: Calling Gemini");
 
     const response = await ai.models.generateContent({
@@ -54,14 +53,14 @@ Output ONLY the refined list in the requested JSON format. Do not generate any i
         temperature: 0.2,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
+          type: "array",
           items: {
-            type: Type.OBJECT,
+            type: "object",
             properties: {
-              label: { type: Type.STRING },
-              box_2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-              part_box_2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-              confidence: { type: Type.NUMBER },
+              label: { type: "string" },
+              box_2d: { type: "array", items: { type: "number" } },
+              part_box_2d: { type: "array", items: { type: "number" } },
+              confidence: { type: "number" },
             },
             required: ["label", "box_2d", "confidence"],
           },
@@ -101,9 +100,9 @@ Output ONLY the refined list in the requested JSON format. Do not generate any i
 }
 
 let instance: HotspotMemoryStore | null = null;
-export function getHotspotMemoryStore(apiKey: string): HotspotMemoryStore {
+export function getHotspotMemoryStore(): HotspotMemoryStore {
   if (!instance) {
-    instance = new HotspotMemoryStore(apiKey, "gemini-3.1-pro-preview");
+    instance = new HotspotMemoryStore("gemini-3.1-flash-image-preview");
   }
   return instance;
 }

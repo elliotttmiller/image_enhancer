@@ -108,6 +108,32 @@ It defines rigid constraints so image generation upgrades aesthetics (Premium Co
 - Node.js (v18+)
 - A Google Cloud Platform (GCP) or AI Studio account with an active **Gemini API Key**.
 
+### Vertex AI authentication (recommended: ADC)
+
+This project uses Vertex / Gemini via server-side calls. The recommended authentication method is Application Default Credentials (ADC). ADC is supported locally (via `gcloud auth application-default login`) and in production via Cloud Run service accounts or Secret Manager.
+
+Windows (PowerShell) — quick ADC setup:
+
+```powershell
+powershell -c "iex (irm https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.ps1)"
+# Or use gcloud directly:
+gcloud auth application-default login
+```
+
+Environment variables (supported):
+   - `GOOGLE_CLOUD_PROJECT` — your GCP project id (also accepts legacy `VERTEX_PROJECT_ID`)
+   - `GOOGLE_CLOUD_LOCATION` — region (e.g., `us-central1` or `global`) (also accepts legacy `VERTEX_LOCATION`)
+   - Optionally: `GOOGLE_CREDENTIALS_JSON` — a Service Account JSON string for short-term local testing (NOT recommended for production). If provided, the server will write it to a temporary credentials file and use it via `GOOGLE_APPLICATION_CREDENTIALS`.
+   - Optionally: `VITE_GOOGLE_API_KEY` — a Vertex AI API key string for browser build-time config. This repo also accepts `VITE_GOOGLE_CREDENTIALS_JSON` as a legacy alias if it contains a plain API key.
+  
+   If the frontend is deployed to GitHub Pages, the app cannot host the Vertex proxy backend there. Set `VITE_API_BASE_URL` to the externally hosted backend URL that serves `/vertex/generate`.
+
+Model access note: if your project does not have access to Gemini preview models, use `gemini-2.5-flash-image` for image generation and `gemini-2.5-flash` for image understanding.
+
+Permissions: Grant the Agent Platform User role (`roles/aiplatform.user`) to the service account or user that will call Vertex AI. For production, attach a minimally-privileged service account to your Cloud Run service and avoid embedding service account JSON into the repo or `.env` files.
+
+Note: Do NOT define API keys in the client build. This repo intentionally avoids injecting `GEMINI_API_KEY` into the browser bundle; all AI calls are proxied through the server endpoint `/api/vertex/generate`.
+
 ### Installation
 
 1. **Clone the repository** (or download the source):
@@ -123,10 +149,21 @@ It defines rigid constraints so image generation upgrades aesthetics (Premium Co
 
 3. **Configure Environment**:
    Create a \`.env\` file in the root directory (refer to \`.env.example\` if present).
-   \`\`\`env
-   VITE_GEMINI_API_KEY=your_api_key_here
-   \`\`\`
-   *(Note: Within the hosted AI studio, the app integrates with `window.aistudio.openSelectKey()` dynamically).*
+    The project uses server-side authentication (recommended: Application Default Credentials - ADC).
+    For local development you can run:
+
+    ```powershell
+    gcloud auth application-default login
+    ```
+
+    Alternatively, set the following environment variables in `.env` for dev-only testing:
+
+    ```env
+    GOOGLE_CLOUD_PROJECT=your-project-id
+    GOOGLE_CLOUD_LOCATION=us-central1
+    # Optional (dev only): GOOGLE_CREDENTIALS_JSON='{"type":"service_account",...}'
+    ```
+    Do NOT embed API keys into the client bundle; use the server proxy endpoint `/api/vertex/generate` instead.
 
 ### Running locally
 
