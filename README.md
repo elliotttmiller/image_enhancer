@@ -184,7 +184,7 @@ npm run build
 The output will be placed in the `/dist` directory, fully ready to be served by Nginx, Express, or any static file host.
 
 ---
-
+-
 ## 🛡️ Security & Privacy
 Since processing occurs heavily within the client framework, user files are transmitted directly and securely from the browser to the Gemini API, bypassing intermediate backend storage servers. Temporary blob storage and canvas manipulations remain encapsulated within browser memory arrays and are flushed upon closure/reset.
 
