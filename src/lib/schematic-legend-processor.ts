@@ -99,7 +99,7 @@ Return a JSON array of objects, each with:
   const ai = new GoogleGenAI();
     
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model,
       contents: [{
         role: "user",
         parts: [
@@ -134,7 +134,7 @@ export async function extractSchematicData(base64Image: string, mimeType: string
     
     // Stage 2: Style Classifier
     const stage2Response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model,
       contents: [{
         role: "user",
         parts: [
@@ -178,7 +178,7 @@ export async function extractSchematicData(base64Image: string, mimeType: string
 
     // Stage 4: Per-Crop OCR
     const stage4Response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model,
       contents: [{
         role: "user",
         parts: [
@@ -197,7 +197,7 @@ export async function extractSchematicData(base64Image: string, mimeType: string
 
     // Stage 6: Full-Image QA
     const stage6Response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model,
       contents: [{
         role: "user",
         parts: [

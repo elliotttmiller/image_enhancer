@@ -7,7 +7,7 @@ export class HotspotMemoryStore {
   private history: any[] = [];
   private model: string;
 
-  constructor(model: string = "gemini-2.5-flash-image") {
+  constructor(model: string = "gemini-2.5-flash") {
     this.model = model;
   }
 
@@ -102,7 +102,7 @@ Output ONLY the refined list in the requested JSON format. Do not generate any i
 let instance: HotspotMemoryStore | null = null;
 export function getHotspotMemoryStore(): HotspotMemoryStore {
   if (!instance) {
-    instance = new HotspotMemoryStore("gemini-2.5-flash-image");
+    instance = new HotspotMemoryStore("gemini-2.5-flash");
   }
   return instance;
 }

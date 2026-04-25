@@ -27,7 +27,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
   }, [items, project.id, onUpdateProject]);
 
   // Settings
-  const [styles, setStyles] = useState<SchematicStyle[]>(['modern']);
+  const [styles, setStyles] = useState<SchematicStyle[]>(['hybrid-realism']);
   const [keepLabels, setKeepLabels] = useState(true);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('auto');
   const [imageSize, setImageSize] = useState<ImageSize>('1K');
@@ -126,7 +126,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
           customPrompt,
           true,
           true,
-          'standard'
+          'maximum'
         );
 
         setItems(prev => prev.map(p => p.id === item.id ? { 
@@ -223,7 +223,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
         prompt || customPrompt,
         true,
         true,
-        'standard'
+        'maximum'
       );
 
       setItems(prev => prev.map(p => p.id === id ? { 

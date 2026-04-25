@@ -7,8 +7,19 @@ dotenv.config();
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "3001", 10);
+const requestTimeoutMs = Number.parseInt(process.env.VERTEX_REQUEST_TIMEOUT_MS || "90000", 10);
 
 app.use(express.json({ limit: "50mb" }));
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const requestId = Math.random().toString(36).slice(2, 10);
+  req.requestId = requestId;
+  console.log(`[VertexProxy:${requestId}] ${req.method} ${req.path} start`);
+  res.on("finish", () => {
+    console.log(`[VertexProxy:${requestId}] ${req.method} ${req.path} ${res.statusCode} ${Date.now() - startedAt}ms`);
+  });
+  next();
+});
 
 function readEnv(name, fallbackName) {
   return (process.env[name] || (fallbackName ? process.env[fallbackName] : "") || "").trim();
@@ -46,7 +57,8 @@ function parseCredentials(raw) {
 }
 
 const project = readEnv("GOOGLE_CLOUD_PROJECT", "VITE_GOOGLE_CLOUD_PROJECT");
-const location = readEnv("GOOGLE_CLOUD_LOCATION", "VITE_GOOGLE_CLOUD_LOCATION") || "global";
+const configuredLocation = readEnv("GOOGLE_CLOUD_LOCATION", "VITE_GOOGLE_CLOUD_LOCATION") || "global";
+const defaultLocation = "global";
 const apiVersion = readEnv("GOOGLE_GENAI_API_VERSION") || "v1";
 const credentials = parseCredentials(readEnv("GOOGLE_CREDENTIALS_JSON", "VITE_GOOGLE_CREDENTIALS_JSON"));
 const authMode = credentials ? "service-account-json" : "application-default-credentials";
@@ -55,19 +67,25 @@ if (!project) {
   throw new Error("Missing GOOGLE_CLOUD_PROJECT (or VITE_GOOGLE_CLOUD_PROJECT) for the local Vertex proxy.");
 }
 
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project,
-  location,
-  apiVersion,
-  ...(credentials
-    ? {
-        googleAuthOptions: {
-          credentials,
-        },
-      }
-    : {}),
-});
+function resolveLocationForModel(model) {
+  return defaultLocation;
+}
+
+function createClient(location) {
+  return new GoogleGenAI({
+    vertexai: true,
+    project,
+    location,
+    apiVersion,
+    ...(credentials
+      ? {
+          googleAuthOptions: {
+            credentials,
+          },
+        }
+      : {}),
+  });
+}
 
 function serializeError(error) {
   const status = typeof error?.status === "number" ? error.status : undefined;
@@ -88,7 +106,7 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     provider: "vertex-ai",
     project,
-    location,
+    location: defaultLocation,
     apiVersion,
     authMode,
   });
@@ -96,7 +114,26 @@ app.get("/api/health", (_req, res) => {
 
 app.post("/api/models/generate-content", async (req, res) => {
   try {
-    const response = await ai.models.generateContent(req.body);
+    const model = typeof req.body?.model === "string" ? req.body.model : "unknown";
+    const resolvedLocation = resolveLocationForModel(model);
+    const ai = createClient(resolvedLocation);
+    const contentParts = Array.isArray(req.body?.contents)
+      ? req.body.contents.reduce((count, item) => count + (Array.isArray(item?.parts) ? item.parts.length : 0), 0)
+      : 0;
+    console.log(`[VertexProxy:${req.requestId}] generateContent model=${model} location=${resolvedLocation} parts=${contentParts}`);
+
+    const mergedConfig = {
+      ...(req.body?.config || {}),
+      httpOptions: {
+        ...(req.body?.config?.httpOptions || {}),
+        timeout: req.body?.config?.httpOptions?.timeout ?? requestTimeoutMs,
+      },
+    };
+
+    const response = await ai.models.generateContent({
+      ...req.body,
+      config: mergedConfig,
+    });
     res.json({
       text: response.text ?? null,
       candidates: response.candidates ?? [],
@@ -105,6 +142,7 @@ app.post("/api/models/generate-content", async (req, res) => {
     });
   } catch (error) {
     const serialized = serializeError(error);
+    console.error(`[VertexProxy:${req.requestId}] error status=${serialized.status ?? 500} message=${serialized.message}`);
     res.status(serialized.status && serialized.status >= 400 ? serialized.status : 500).json({
       error: serialized,
     });
@@ -112,5 +150,5 @@ app.post("/api/models/generate-content", async (req, res) => {
 });
 
 app.listen(port, "127.0.0.1", () => {
-  console.log(`Vertex proxy listening on http://127.0.0.1:${port} using ${authMode}`);
+  console.log(`Vertex proxy listening on http://127.0.0.1:${port} using ${authMode} defaultLocation=${defaultLocation}`);
 });

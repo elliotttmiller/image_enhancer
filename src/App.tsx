@@ -178,7 +178,7 @@ export default function App() {
       workflowType,
       originalImage: originalImage || "",
       enhancedImage: (workflowType === "refine" || workflowType === "extract") ? originalImage : null,
-      styles: ["modern"],
+      styles: ["hybrid-realism"],
       keepLabels: true,
       aspectRatio: (workflowType === "refine" || workflowType === "extract") ? "auto" : "1:1",
       aspectRatios: (workflowType === "refine" || workflowType === "extract") ? ["auto"] : ["1:1"],
@@ -187,6 +187,9 @@ export default function App() {
       imageSize: "1K",
       model: "gemini-2.5-flash-image",
       customPrompt: "",
+      preserveGeometry: true,
+      enhanceDetails: true,
+      outputQuality: "maximum",
     };
     setProjects(prev => [newProject, ...prev]);
     setCurrentProjectId(newProject.id);
@@ -313,6 +316,14 @@ export default function App() {
       const ratiosToProcess = currentProject.isMultiRatio && currentProject.aspectRatios && currentProject.aspectRatios.length > 0
         ? currentProject.aspectRatios
         : [currentProject.aspectRatio];
+      const referenceAwareStyles = currentProject.referenceImages?.length
+        && currentProject.styles.length === 1
+        && currentProject.styles[0] === "modern"
+          ? ["modern", "hybrid-realism"] as SchematicStyle[]
+          : currentProject.styles;
+      const preserveGeometry = currentProject.preserveGeometry ?? true;
+      const enhanceDetails = currentProject.enhanceDetails ?? true;
+      const outputQuality = currentProject.outputQuality ?? "maximum";
 
       const newGeneratedImages: GeneratedImage[] = [];
 
@@ -322,15 +333,15 @@ export default function App() {
           const result = await enhanceSchematic(
             base64Data, 
             mimeType, 
-            currentProject.styles, 
+            referenceAwareStyles, 
             currentProject.keepLabels,
             ratio,
             currentProject.imageSize,
             currentProject.model,
             currentProject.customPrompt,
-            true, // preserveGeometry
-            true, // enhanceDetails
-            "high", // outputQuality
+            preserveGeometry,
+            enhanceDetails,
+            outputQuality,
             currentProject.referenceImages
           );
           
@@ -1037,7 +1048,7 @@ export default function App() {
                                         newStyles = [...currentStyles, style];
                                       }
                                       // Ensure at least one style is selected
-                                      if (newStyles.length === 0) newStyles = ["modern"];
+                                      if (newStyles.length === 0) newStyles = ["hybrid-realism"];
                                       updateProject(currentProject.id, { styles: newStyles });
                                     }}
                                     className={`px-2 py-2 rounded-lg text-xs font-medium transition-all truncate ${

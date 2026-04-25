@@ -1,0 +1,337 @@
+{
+  "id": "1777083613108",
+  "title": "QB06-QSX_SCH",
+  "diagramPages": [
+    1
+  ],
+  "legendPages": [],
+  "parts": [
+    {
+      "id": "339073",
+      "name": "10-24 X 1 1/4 Sl. Fillister Hd.Screw",
+      "quantity": 2,
+      "sku": "339073"
+    },
+    {
+      "id": "209030",
+      "name": "Wing Nut: 10-24",
+      "quantity": 2,
+      "sku": "209030"
+    },
+    {
+      "id": "202028",
+      "name": "Threaded Washer",
+      "quantity": 2,
+      "sku": "202028"
+    },
+    {
+      "id": "QB6010",
+      "name": "Wiper",
+      "quantity": 1,
+      "sku": "QB6010"
+    },
+    {
+      "id": "210059",
+      "name": "Shoulder Screw",
+      "quantity": 1,
+      "sku": "210059"
+    },
+    {
+      "id": "219064",
+      "name": "Spring Washer",
+      "quantity": 1,
+      "sku": "219064"
+    },
+    {
+      "id": "210058F",
+      "name": "Latch",
+      "quantity": 1,
+      "sku": "210058F"
+    },
+    {
+      "id": "489023",
+      "name": "Flat Washer, #6 S.S.",
+      "quantity": 1,
+      "sku": "489023"
+    },
+    {
+      "id": "QB6002",
+      "name": "Pressure Plate",
+      "quantity": 1,
+      "sku": "QB6002"
+    },
+    {
+      "id": "209046",
+      "name": "Washer",
+      "quantity": 2,
+      "sku": "209046"
+    },
+    {
+      "id": "209017",
+      "name": "10-24 Locknut 18-18 S.S.",
+      "quantity": 2,
+      "sku": "209017"
+    },
+    {
+      "id": "499023",
+      "name": "4-40 X 3/16 Flat Head Screw 18-8",
+      "quantity": 2,
+      "sku": "499023"
+    },
+    {
+      "id": "QB6011",
+      "name": "Seal",
+      "quantity": 1,
+      "sku": "QB6011"
+    },
+    {
+      "id": "QB0005",
+      "name": "Screw, #8 x 1/2 Fl Hd Self Tapping",
+      "quantity": 3,
+      "sku": "QB0005"
+    },
+    {
+      "id": "QB6004",
+      "name": "Blade Holder",
+      "quantity": 1,
+      "sku": "QB6004"
+    },
+    {
+      "id": "QB6003-5",
+      "name": "QB6003-5",
+      "quantity": 1,
+      "sku": "QB6003-5"
+    },
+    {
+      "id": "QB6023-5",
+      "name": "QB6023-5",
+      "quantity": 1,
+      "sku": "QB6023-5"
+    },
+    {
+      "id": "QB6033-5",
+      "name": "QB6033-5",
+      "quantity": 1,
+      "sku": "QB6033-5"
+    },
+    {
+      "id": "QB6043-5",
+      "name": "QB6043-5",
+      "quantity": 1,
+      "sku": "QB6043-5"
+    },
+    {
+      "id": "QB6001",
+      "name": "Shell",
+      "quantity": 1,
+      "sku": "QB6001"
+    },
+    {
+      "id": "149029",
+      "name": "Washer, Nas620C 1/4 L, Sst",
+      "quantity": 4,
+      "sku": "149029"
+    },
+    {
+      "id": "QB0008",
+      "name": "Wheel",
+      "quantity": 2,
+      "sku": "QB0008"
+    },
+    {
+      "id": "QB0006",
+      "name": "Axle",
+      "quantity": 2,
+      "sku": "QB0006"
+    }
+  ],
+  "coordinates": {
+    "149029": {
+      "id": "149029",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "202028": {
+      "id": "202028",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "209017": {
+      "id": "209017",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "209030": {
+      "id": "209030",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "209046": {
+      "id": "209046",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "210059": {
+      "id": "210059",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "219064": {
+      "id": "219064",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "339073": {
+      "id": "339073",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "489023": {
+      "id": "489023",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "499023": {
+      "id": "499023",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6010": {
+      "id": "QB6010",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "210058F": {
+      "id": "210058F",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6002": {
+      "id": "QB6002",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6011": {
+      "id": "QB6011",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB0005": {
+      "id": "QB0005",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6004": {
+      "id": "QB6004",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6003-5": {
+      "id": "QB6003-5",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6023-5": {
+      "id": "QB6023-5",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6033-5": {
+      "id": "QB6033-5",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6043-5": {
+      "id": "QB6043-5",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB6001": {
+      "id": "QB6001",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB0008": {
+      "id": "QB0008",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    },
+    "QB0006": {
+      "id": "QB0006",
+      "x_pct": 0,
+      "y_pct": 0,
+      "shape": "rectangle",
+      "pageNumber": 1,
+      "rotation": 0
+    }
+  },
+  "schema_version": "1.0",
+  "image_natural_width": 1224,
+  "image_natural_height": 792
+}

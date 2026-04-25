@@ -22,6 +22,7 @@ export interface ProcessedFile {
     type?: 'SCHEMATIC' | 'LEGEND' | 'OTHER';
     labels?: ExtractedLabel[];
     legendEntries?: LegendEntry[];
+    error?: string;
   }[];
   correlatedData?: {
     schematicPageIndex: number;
@@ -41,6 +42,16 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
   const [progress, setProgress] = useState({ current: 0, total: 0, message: '' });
   const [viewingFile, setViewingFile] = useState<ProcessedFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const formatError = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'Unknown error';
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = e.target.files;
@@ -86,14 +97,25 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
       
       try {
         const updatedPages = [...file.pages];
+        const warnings: string[] = [];
         
         // Step 1: Classify pages
         for (let p = 0; p < updatedPages.length; p++) {
           setProgress({ current: p + 1, total: updatedPages.length, message: `Classifying page ${p + 1} of ${file.filename}...` });
           const [mimeTypePart, base64Image] = updatedPages[p].dataUri.split(',');
           const mimeType = mimeTypePart.split(';')[0].split(':')[1];
-          
-          updatedPages[p].type = await classifyPage(base64Image, mimeType);
+
+          try {
+            console.log(`[LegendProcessor] Classifying page ${p + 1}/${updatedPages.length} of ${file.filename}`);
+            updatedPages[p].type = await classifyPage(base64Image, mimeType);
+            console.log(`[LegendProcessor] Page ${p + 1} classified as ${updatedPages[p].type}`);
+          } catch (error) {
+            const message = formatError(error);
+            updatedPages[p].type = 'OTHER';
+            updatedPages[p].error = `Classification failed: ${message}`;
+            warnings.push(`Page ${p + 1}: classification failed, treated as OTHER.`);
+            console.error(`[LegendProcessor] Classification failed for page ${p + 1}: ${message}`);
+          }
         }
 
         // Step 2: Extract data
@@ -102,17 +124,34 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
           const [mimeTypePart, base64Image] = page.dataUri.split(',');
           const mimeType = mimeTypePart.split(';')[0].split(':')[1];
 
-          if (page.type === 'SCHEMATIC') {
-            setProgress({ current: p + 1, total: updatedPages.length, message: `Extracting labels from page ${p + 1}...` });
-            page.labels = await extractSchematicLabels(base64Image, mimeType);
-          } else if (page.type === 'LEGEND') {
-            setProgress({ current: p + 1, total: updatedPages.length, message: `Extracting legend from page ${p + 1}...` });
-            page.legendEntries = await extractLegendData(base64Image, mimeType);
+          try {
+            if (page.type === 'SCHEMATIC') {
+              setProgress({ current: p + 1, total: updatedPages.length, message: `Extracting labels from page ${p + 1}...` });
+              console.log(`[LegendProcessor] Extracting schematic labels from page ${p + 1}`);
+              page.labels = await extractSchematicLabels(base64Image, mimeType);
+              console.log(`[LegendProcessor] Extracted ${page.labels?.length ?? 0} schematic labels from page ${p + 1}`);
+            } else if (page.type === 'LEGEND') {
+              setProgress({ current: p + 1, total: updatedPages.length, message: `Extracting legend from page ${p + 1}...` });
+              console.log(`[LegendProcessor] Extracting legend entries from page ${p + 1}`);
+              page.legendEntries = await extractLegendData(base64Image, mimeType);
+              console.log(`[LegendProcessor] Extracted ${page.legendEntries?.length ?? 0} legend entries from page ${p + 1}`);
+            }
+          } catch (error) {
+            const message = formatError(error);
+            page.error = `${page.type === 'LEGEND' ? 'Legend' : 'Schematic'} extraction failed: ${message}`;
+            warnings.push(`Page ${p + 1}: ${page.type === 'LEGEND' ? 'legend' : 'schematic'} extraction failed.`);
+            console.error(`[LegendProcessor] Extraction failed for page ${p + 1}: ${message}`);
+            if (page.type === 'SCHEMATIC') {
+              page.labels = [];
+            } else if (page.type === 'LEGEND') {
+              page.legendEntries = [];
+            }
           }
         }
 
         // Step 3: Correlate
         setProgress({ current: updatedPages.length, total: updatedPages.length, message: `Correlating data for ${file.filename}...` });
+        console.log(`[LegendProcessor] Correlating data for ${file.filename}`);
         
         const schematics = updatedPages.filter(p => p.type === 'SCHEMATIC');
         const legends = updatedPages.filter(p => p.type === 'LEGEND');
@@ -141,19 +180,33 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
           });
         }
 
+        if (schematics.length === 0) {
+          warnings.push('No schematic pages were classified successfully.');
+        }
+
+        if (legends.length === 0) {
+          warnings.push('No legend pages were classified successfully.');
+        }
+
+        if (correlatedData.length === 0) {
+          warnings.push('No correlated output was produced from this file.');
+        }
+
         setFiles(prev => prev.map(f => f.id === file.id ? { 
           ...f, 
-          status: 'success', 
+          status: correlatedData.length > 0 ? 'success' : 'error', 
           pages: updatedPages,
-          correlatedData
+          correlatedData,
+          error: warnings.length > 0 ? warnings.join(' ') : undefined
         } : f));
+        console.log(`[LegendProcessor] Completed ${file.filename} with ${correlatedData.length} correlated schematic pages`);
 
       } catch (error: any) {
         console.error(`Error processing ${file.filename}:`, error);
         setFiles(prev => prev.map(f => f.id === file.id ? { 
           ...f, 
           status: 'error', 
-          error: error.message || 'Unknown error' 
+          error: formatError(error)
         } : f));
       }
     }
@@ -381,6 +434,30 @@ export function SchematicLegendProcessor({ onClose }: ProcessorProps) {
                                 <span className="text-amber-400 font-medium">No Legend Found</span>
                               )}
                               <span className="text-neutral-500 ml-2">({data.parts.length} parts extracted)</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {file.error && (
+                      <div className={`mt-4 rounded-lg p-4 border text-sm ${
+                        file.status === 'success'
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                          : 'bg-red-500/10 border-red-500/20 text-red-300'
+                      }`}>
+                        {file.error}
+                      </div>
+                    )}
+
+                    {file.pages.some(p => p.error) && (
+                      <div className="mt-4 bg-neutral-900 rounded-lg p-4 border border-white/5">
+                        <h4 className="text-sm font-medium text-white mb-2">Page Warnings</h4>
+                        <div className="space-y-2">
+                          {file.pages.filter(p => p.error).map(page => (
+                            <div key={page.index} className="text-sm text-neutral-300">
+                              <span className="text-amber-400 font-medium">Page {page.index + 1}</span>
+                              <span className="text-neutral-400"> — {page.error}</span>
                             </div>
                           ))}
                         </div>
