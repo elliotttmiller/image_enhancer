@@ -18,9 +18,9 @@ jobs:
       group: pages
       cancel-in-progress: true
     env:
-      # Only pass public or non-secret build-time settings to the browser bundle.
-      # Do not expose credentials or API keys in GitHub Pages build output.
+      # Only pass public build-time settings that the static client needs.
       VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+      VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

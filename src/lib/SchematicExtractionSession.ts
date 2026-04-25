@@ -9,9 +9,7 @@ export class SchematicExtractionSession {
   ) {}
 
   async run(base64Image: string, imgW: number, imgH: number): Promise<any[]> {
-  // Frontend uses a shim that posts to the server endpoint; do not reference
-  // client-side API keys here. The shim ignores opts and always POSTs to /api/vertex/generate.
-  const ai = new GoogleGenAI();
+    const ai = new GoogleGenAI();
     const model = ai.models;
 
     // Stage 2: Style Classifier

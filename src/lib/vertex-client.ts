@@ -1,3 +1,28 @@
+import { GoogleGenAI as GoogleGenAISDK } from "@google/genai";
+
+let sdkInstance: GoogleGenAISDK | null = null;
+
+function getApiKey(): string {
+  const env = (import.meta as any).env ?? {};
+  const apiKey = (env.VITE_GOOGLE_API_KEY as string | undefined)?.trim()
+    || (env.VITE_GOOGLE_CREDENTIALS_JSON as string | undefined)?.trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing VITE_GOOGLE_API_KEY. Configure a browser-safe Gemini API key for this static deployment."
+    );
+  }
+
+  return apiKey;
+}
+
+function getSdk(): GoogleGenAISDK {
+  if (!sdkInstance) {
+    sdkInstance = new GoogleGenAISDK({ apiKey: getApiKey() });
+  }
+  return sdkInstance;
+}
+
 export class GoogleGenAI {
   models: {
     generateContent: (req: any) => Promise<any>
@@ -5,29 +30,7 @@ export class GoogleGenAI {
 
   constructor(opts?: any) {
     this.models = {
-      generateContent: async (req: any) => {
-  const apiBase = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api';
-        const response = await fetch(`${apiBase.replace(/\/$/, '')}/vertex/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(req)
-        });
-        
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || "Failed API call");
-        }
-        
-        const data = await response.json();
-        
-        // Ensure compatibility with the GenerateContentResponse shape
-        return {
-          ...data,
-          get text() {
-            return data.text;
-          }
-        };
-      }
+      generateContent: async (req: any) => getSdk().models.generateContent(req),
     };
   }
 }

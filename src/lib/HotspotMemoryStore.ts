@@ -33,8 +33,7 @@ Existing Hotspots (JSON): ${JSON.stringify(currentHotspots)}
 
 Output ONLY the refined list in the requested JSON format. Do not generate any images or any other content.`;
 
-  // Use frontend shim which proxies to server; do not embed client-side API keys.
-  const ai = new GoogleGenAI();
+    const ai = new GoogleGenAI();
     console.log("[DEBUG] HotspotMemoryStore.refine: Calling Gemini");
 
     const response = await ai.models.generateContent({
