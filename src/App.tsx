@@ -153,18 +153,20 @@ export default function App() {
   }, [currentProjectId, currentProject?.generatedImages]);
 
   useEffect(() => {
-    // We are now decoupled from AI Studio's API Key injected credential 
-    // and rely on our full-stack Express Backend for Vertex AI.
-    setHasApiKey(true);
+    void checkApiKey();
   }, []);
 
   const checkApiKey = async () => {
-    // Deprecated for Vertex AI
-    setHasApiKey(true);
+    try {
+      const response = await fetch("/api/health");
+      setHasApiKey(response.ok);
+    } catch {
+      setHasApiKey(false);
+    }
   };
 
   const handleSelectKey = async () => {
-    // Deprecated for Vertex AI
+    await checkApiKey();
   };
 
   const createProject = (originalImage: string | null, name: string = "Untitled Project", workflowType: "generate" | "refine" | "extract" | "batch" = "generate", id?: string) => {
@@ -183,7 +185,7 @@ export default function App() {
       isMultiRatio: false,
       generatedImages: [],
       imageSize: "1K",
-      model: "gemini-3.1-flash-image-preview",
+      model: "gemini-2.5-flash-image",
       customPrompt: "",
     };
     setProjects(prev => [newProject, ...prev]);
@@ -606,21 +608,16 @@ export default function App() {
           <div className="w-16 h-16 bg-indigo-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-indigo-500">
             <Key className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold mb-3">API Key Required</h2>
+          <h2 className="text-2xl font-bold mb-3">Local Vertex Backend Required</h2>
           <p className="text-neutral-400 mb-8">
-            To use the advanced schematic enhancement model, you need to select a paid Google Cloud project with the Gemini API enabled.
+            Start the local Vertex proxy with `npm run dev`. The React app now sends model requests to `/api`, and the local Node backend holds your Vertex AI credentials.
           </p>
           <button
             onClick={handleSelectKey}
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
           >
-            Select API Key
+            Retry Backend Check
           </button>
-          <p className="mt-6 text-xs text-neutral-500">
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="underline hover:text-neutral-300">
-              Learn more about billing
-            </a>
-          </p>
         </motion.div>
       </div>
     );
@@ -1014,7 +1011,7 @@ export default function App() {
                           </button>
                         </div>
                         <p className="text-xs text-neutral-500 mt-2">
-                          Use Gemini 3.1 Flash Preview for best quality. Gemini 2.5 Flash Image is available as a fallback.
+                          Gemini 2.5 Flash Image is the safest default for local Vertex workflows. Use Gemini 3.1 Flash Preview only if your Vertex project has access to that preview model.
                         </p>
                       </div>
 

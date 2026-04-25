@@ -101,7 +101,7 @@ Output ONLY the refined list in the requested JSON format. Do not generate any i
 let instance: HotspotMemoryStore | null = null;
 export function getHotspotMemoryStore(): HotspotMemoryStore {
   if (!instance) {
-    instance = new HotspotMemoryStore("gemini-3.1-flash-image-preview");
+    instance = new HotspotMemoryStore("gemini-2.5-flash-image");
   }
   return instance;
 }

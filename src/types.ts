@@ -68,6 +68,7 @@ export enum ErrorCode {
   MISSING_API_KEY       = "ERR_MISSING_API_KEY",
   INVALID_API_KEY       = "ERR_INVALID_API_KEY",
   AUTH_FAILED           = "ERR_AUTH_FAILED",
+  API_SERVICE_BLOCKED   = "ERR_API_SERVICE_BLOCKED",
 
   // Quota & Billing
   QUOTA_EXCEEDED        = "ERR_QUOTA_EXCEEDED",

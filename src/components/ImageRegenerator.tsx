@@ -27,7 +27,7 @@ export function ImageRegenerator({ onClose }: ImageRegeneratorProps) {
   
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('auto');
   const [imageSize, setImageSize] = useState<ImageSize>('4K');
-  const [model, setModel] = useState<ModelVersion>('gemini-3.1-flash-image-preview');
+  const [model, setModel] = useState<ModelVersion>('gemini-2.5-flash-image');
   const [mode, setMode] = useState<'creative' | 'clone'>('creative');
   const [customPrompt, setCustomPrompt] = useState("");
   

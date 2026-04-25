@@ -1,26 +1,28 @@
-import { GoogleGenAI as GoogleGenAISDK } from "@google/genai";
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL as string | undefined)?.trim() || "/api";
 
-let sdkInstance: GoogleGenAISDK | null = null;
+async function postJson(path: string, body: unknown): Promise<any> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 
-function getApiKey(): string {
-  const env = (import.meta as any).env ?? {};
-  const apiKey = (env.VITE_GOOGLE_API_KEY as string | undefined)?.trim()
-    || (env.VITE_GOOGLE_CREDENTIALS_JSON as string | undefined)?.trim();
+  const payload = await response.json().catch(async () => {
+    const text = await response.text().catch(() => "");
+    return text ? { error: { message: text } } : null;
+  });
 
-  if (!apiKey) {
-    throw new Error(
-      "Missing VITE_GOOGLE_API_KEY. Configure a browser-safe Gemini API key for this static deployment."
-    );
+  if (!response.ok) {
+    const message =
+      payload?.error?.message
+      || payload?.message
+      || `Vertex proxy request failed with status ${response.status}.`;
+    throw new Error(message);
   }
 
-  return apiKey;
-}
-
-function getSdk(): GoogleGenAISDK {
-  if (!sdkInstance) {
-    sdkInstance = new GoogleGenAISDK({ apiKey: getApiKey() });
-  }
-  return sdkInstance;
+  return payload;
 }
 
 export class GoogleGenAI {
@@ -28,9 +30,9 @@ export class GoogleGenAI {
     generateContent: (req: any) => Promise<any>
   };
 
-  constructor(opts?: any) {
+  constructor(_opts?: any) {
     this.models = {
-      generateContent: async (req: any) => getSdk().models.generateContent(req),
+      generateContent: async (req: any) => postJson("/models/generate-content", req),
     };
   }
 }

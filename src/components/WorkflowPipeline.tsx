@@ -44,7 +44,7 @@ export function WorkflowPipeline({ onClose }: PipelineProps) {
     enhancementKeepLabels: true,
     enhancementAspectRatio: '1:1',
     enhancementImageSize: '1K',
-  enhancementModel: 'gemini-3.1-flash-image-preview',
+  enhancementModel: 'gemini-2.5-flash-image',
     enhancementCustomPrompt: '',
     enhancementPreserveGeometry: true,
     enhancementEnhanceDetails: true,

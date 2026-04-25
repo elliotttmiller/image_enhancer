@@ -430,9 +430,26 @@ function classifyError(raw: unknown, attempt: number): AppError {
   let msg = raw instanceof Error ? raw.message : typeof raw === "string" ? raw : String(raw);
   const lc = msg.toLowerCase();
   
-  const retryable = !(lc.includes("api_key") || lc.includes("authentication") || lc.includes("billing") || lc.includes("permission"));
+  const retryable = !(
+    lc.includes("api_key_service_blocked") ||
+    lc.includes("service_blocked") ||
+    lc.includes("api_key_invalid") ||
+    lc.includes("api key not valid") ||
+    lc.includes("api_key") ||
+    lc.includes("api key") ||
+    lc.includes("authentication") ||
+    lc.includes("billing") ||
+    lc.includes("permission")
+  );
   let code = ErrorCode.UNKNOWN;
-  if (lc.includes("api_key") || lc.includes("api key")) code = ErrorCode.MISSING_API_KEY;
+  if (lc.includes("api_key_service_blocked") || lc.includes("service_blocked")) {
+    code = ErrorCode.API_SERVICE_BLOCKED;
+    msg = "The configured Google API key is blocked from calling the Gemini Developer API (`generativelanguage.googleapis.com`). Enable Gemini Developer API access for this key/project or replace it with a key that is allowed to call Gemini models.";
+  } else if (lc.includes("api_key_invalid") || lc.includes("api key not valid") || lc.includes("invalid api key")) {
+    code = ErrorCode.INVALID_API_KEY;
+  } else if (lc.includes("api_key") || lc.includes("api key")) {
+    code = ErrorCode.MISSING_API_KEY;
+  }
   else if (lc.includes("quota") || lc.includes("exhausted")) code = ErrorCode.QUOTA_EXCEEDED;
   else if (lc.includes("billing")) code = ErrorCode.BILLING_REQUIRED;
   else if (lc.includes("rate") || lc.includes("429")) code = ErrorCode.RATE_LIMITED;
@@ -472,7 +489,7 @@ export async function withRetry<T>(
 
 export function getModelForAttempt(attempt: number, type: 'text' | 'image' = 'text'): string {
   const textModels = ["gemini-2.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview"];
-  const imageModels = ["gemini-3.1-flash-image-preview", "gemini-2.5-flash-image", "gemini-3-pro-image-preview"];
+  const imageModels = ["gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"];
   const models = type === 'text' ? textModels : imageModels;
   return models[Math.min(attempt - 1, models.length - 1)];
 }
@@ -601,7 +618,7 @@ export async function enhanceSchematic(
   keepLabels: boolean = true,
   aspectRatio: AspectRatioOption = "1:1",
   imageSize: ImageSize = "1K",
-  model: ModelVersion = "gemini-3.1-flash-image-preview",
+  model: ModelVersion = "gemini-2.5-flash-image",
   customPrompt: string = "",
   preserveGeometry: boolean = true,
   enhanceDetails: boolean = true,
@@ -669,7 +686,7 @@ export async function regenerateImage(
   customPrompt: string = "",
   aspectRatio: AspectRatioOption = "1:1",
   imageSize: ImageSize = "1K",
-  model: ModelVersion = "gemini-3.1-flash-image-preview",
+  model: ModelVersion = "gemini-2.5-flash-image",
   mode: 'creative' | 'clone' = 'creative'
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
   const caller = "regenerateImage";
@@ -717,7 +734,7 @@ export async function refineSchematic(
   instruction: string,
   aspectRatio: AspectRatioOption = "1:1",
   imageSize: ImageSize = "1K",
-  model: ModelVersion = "gemini-3.1-flash-image-preview",
+  model: ModelVersion = "gemini-2.5-flash-image",
   referenceImages?: { url: string; mimeType: string }[],
   hotspots?: RawHotspot[]
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio; hotspots: RawHotspot[] }> {
@@ -766,7 +783,7 @@ export async function refineImage(
   refinementPrompt: string,
   aspectRatio: AspectRatioOption = "1:1",
   imageSize: ImageSize = "1K",
-  model: ModelVersion = "gemini-3.1-flash-image-preview",
+  model: ModelVersion = "gemini-2.5-flash-image",
   mode: 'creative' | 'clone' = 'creative'
 ): Promise<{ imageUrl: string; aspectRatio: AspectRatio }> {
   const caller = "refineImage";

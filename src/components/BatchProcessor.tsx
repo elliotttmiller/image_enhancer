@@ -31,7 +31,7 @@ export function BatchProcessor({ project, onUpdateProject, onClose }: BatchProce
   const [keepLabels, setKeepLabels] = useState(true);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('auto');
   const [imageSize, setImageSize] = useState<ImageSize>('1K');
-  const [model, setModel] = useState<ModelVersion>('gemini-3.1-flash-image-preview');
+  const [model, setModel] = useState<ModelVersion>('gemini-2.5-flash-image');
   const [customPrompt, setCustomPrompt] = useState('');
   const [refinePrompt, setRefinePrompt] = useState('');
   const [selectedItem, setSelectedItem] = useState<BatchItem | null>(null);
