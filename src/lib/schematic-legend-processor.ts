@@ -54,12 +54,13 @@ Return ONLY a JSON object with a single key "type" containing one of the three s
     
     const response = await ai.models.generateContent({
       model,
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: prompt }
         ]
-      },
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -99,12 +100,13 @@ Return a JSON array of objects, each with:
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: prompt }
         ]
-      },
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -133,12 +135,13 @@ export async function extractSchematicData(base64Image: string, mimeType: string
     // Stage 2: Style Classifier
     const stage2Response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: "Analyze this technical schematic diagram and provide classification JSON." }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_2_SYSTEM,
         responseMimeType: "application/json"
@@ -176,12 +179,13 @@ export async function extractSchematicData(base64Image: string, mimeType: string
     // Stage 4: Per-Crop OCR
     const stage4Response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: `Analyze the image and extract labels. Context: ${JSON.stringify(stage2Meta)}` }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_4_SYSTEM,
         responseMimeType: "application/json",
@@ -194,12 +198,13 @@ export async function extractSchematicData(base64Image: string, mimeType: string
     // Stage 6: Full-Image QA
     const stage6Response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: `Validate the following extractions: ${JSON.stringify(stage4Results)}` }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_6_SYSTEM,
         responseMimeType: "application/json",
@@ -228,12 +233,13 @@ export async function auditAndUpdateJson(base64Image: string, mimeType: string, 
   const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model,
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: mappingPrompt }
         ]
-      },
+      }],
       config: {
         responseMimeType: "application/json"
       }
@@ -284,12 +290,13 @@ Return a JSON array of objects, each with 'label' (the callout number/code), 'de
     
     const response = await ai.models.generateContent({
       model,
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType, data: base64Image } },
           { text: prompt }
         ]
-      },
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {

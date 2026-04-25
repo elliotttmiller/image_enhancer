@@ -15,12 +15,13 @@ export class SchematicExtractionSession {
     // Stage 2: Style Classifier
     const stage2Response = await model.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType: "image/png", data: base64Image } },
           { text: "Analyze this technical schematic diagram and provide classification JSON." }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_2_SYSTEM,
         responseMimeType: "application/json"
@@ -32,12 +33,13 @@ export class SchematicExtractionSession {
     // Stage 4: Per-Crop OCR (Simplified for now)
     const stage4Response = await model.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType: "image/png", data: base64Image } },
           { text: `Analyze the image and extract labels. Context: ${JSON.stringify(stage2Meta)}` }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_4_SYSTEM,
         responseMimeType: "application/json"
@@ -49,12 +51,13 @@ export class SchematicExtractionSession {
     // Stage 6: Full-Image QA
     const stage6Response = await model.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: {
+      contents: [{
+        role: "user",
         parts: [
           { inlineData: { mimeType: "image/png", data: base64Image } },
           { text: `Validate the following extractions: ${JSON.stringify(stage4Results)}` }
         ]
-      },
+      }],
       config: {
         systemInstruction: STAGE_6_SYSTEM,
         responseMimeType: "application/json"

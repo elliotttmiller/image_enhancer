@@ -551,7 +551,7 @@ export async function detectOptimalAspectRatio(
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: analysisModel,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
     });
 
     const text = response.text?.trim();
@@ -606,7 +606,7 @@ This description will guide an AI to colorize the schematic components while kee
 
   return withRetry(async (attempt, model) => {
     const ai = new GoogleGenAI();
-    const response = await ai.models.generateContent({ model, contents: { parts } });
+    const response = await ai.models.generateContent({ model, contents: [{ role: "user", parts }] });
     return response.text || "Use realistic, pristine CAD materials and colors.";
   }, 'text').catch(() => "Use realistic, pristine CAD materials and colors based on standard industrial design practices.");
 }
@@ -661,7 +661,7 @@ export async function enhanceSchematic(
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       config: {
         temperature, topP: modelParams.topP, topK: modelParams.topK,
         ...(currentModel.includes('image') && { imageConfig: { imageSize, aspectRatio: targetAspectRatio } })
@@ -709,7 +709,7 @@ export async function regenerateImage(
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       config: {
         imageConfig: { imageSize, aspectRatio: targetAspectRatio },
         temperature, topP: modelParams.topP, topK: modelParams.topK,
@@ -765,7 +765,7 @@ export async function refineSchematic(
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       config: { imageConfig: { imageSize, aspectRatio: targetAspectRatio }, temperature, topP: modelParams.topP, topK: modelParams.topK },
     });
 
@@ -807,7 +807,7 @@ export async function refineImage(
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model: currentModel,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       config: { imageConfig: { imageSize, aspectRatio: targetAspectRatio }, temperature, topP: modelParams.topP, topK: modelParams.topK },
     });
 
@@ -831,7 +831,7 @@ export async function extractHotspots(base64Image: string, mimeType: string): Pr
     const ai = new GoogleGenAI();
     const response = await ai.models.generateContent({
       model,
-      contents: { parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] },
+      contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       config: {
         systemInstruction, temperature: 0.2, responseMimeType: "application/json",
         responseSchema: {

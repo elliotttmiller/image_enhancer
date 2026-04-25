@@ -41,6 +41,7 @@ Output ONLY the refined list in the requested JSON format. Do not generate any i
       contents: [
         ...this.history,
         {
+          role: "user",
           parts: [
             { text: prompt },
             { inlineData: { mimeType, data: base64Image } },
